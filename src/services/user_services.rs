@@ -1,8 +1,10 @@
-use actix_web::error::{ErrorBadRequest, ErrorInternalServerError};
 use bcrypt::{DEFAULT_COST, hash};
 use sqlx::PgPool;
 
-use crate::models::user_model::{CreateUser, UserResponse};
+use crate::{
+    errors::errors::UserError,
+    models::user_model::{CreateUser, UserResponse},
+};
 
 #[derive(Clone)]
 pub struct UserService {
@@ -17,11 +19,16 @@ impl UserService {
     pub async fn create_user(
         &self,
         new_user: CreateUser,
-    ) -> std::result::Result<UserResponse, actix_web::Error> {
-        new_user.validate().map_err(|e| ErrorBadRequest(e))?;
+    ) -> std::result::Result<UserResponse, UserError> {
+        match new_user.validate() {
+            Ok(()) => (),
+            Err(e) => return Err(e),
+        };
 
-        let hashed_password =
-            hash(new_user.password, DEFAULT_COST).map_err(|e| ErrorInternalServerError(e))?;
+        let hashed_password = match hash(new_user.password, DEFAULT_COST) {
+            Ok(hp) => hp,
+            Err(e) => return Err(UserError::Internal(e.to_string())),
+        };
 
         let new_user = sqlx::query_as::<_, UserResponse>(
             r#"
@@ -36,6 +43,16 @@ impl UserService {
         .fetch_one(&self.pool)
         .await;
 
-        new_user.map_err(ErrorInternalServerError)
+        let new_user = match new_user {
+            Ok(user) => user,
+            Err(e) => match e {
+                sqlx::Error::Database(db_err) if db_err.code().as_deref() == Some("23505") => {
+                    return Err(UserError::DuplicateEmail);
+                }
+                _ => return Err(UserError::Internal(e.to_string())),
+            },
+        };
+
+        Ok(new_user)
     }
 }

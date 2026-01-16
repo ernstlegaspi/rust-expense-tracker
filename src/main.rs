@@ -1,3 +1,4 @@
+mod errors;
 mod handlers;
 mod models;
 mod routes;
@@ -8,19 +9,30 @@ use sqlx::postgres::PgPoolOptions;
 use std::env::var;
 use std::io::Result;
 
+use tracing::info;
+use tracing_actix_web::TracingLogger;
+use tracing_subscriber::{EnvFilter, layer::SubscriberExt, util::SubscriberInitExt};
+
 use crate::{
     routes::user_routes,
     services::{jwt_services::JwtService, user_services::UserService},
 };
 
-#[get("/test")]
-async fn test_route() -> impl Responder {
-    "A Test Route"
+#[get("/health")]
+async fn health() -> impl Responder {
+    "App is healthy and working."
 }
 
 #[actix_web::main]
 async fn main() -> Result<()> {
+    tracing_subscriber::registry()
+        .with(EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info")))
+        .with(tracing_subscriber::fmt::layer().compact().pretty())
+        .init();
+
     dotenv::dotenv().ok();
+
+    info!("Starting server...");
 
     let database_url = var("DATABASE_URL").expect("DATABASE_URL must be set.");
     let jwt_secret = var("JWT_SECRET").expect("JWT_SECRET must be set.");
@@ -36,10 +48,11 @@ async fn main() -> Result<()> {
 
     HttpServer::new(move || {
         App::new()
+            .wrap(TracingLogger::default())
             .app_data(Data::new(user_service.clone()))
             .app_data(Data::new(jwt_service.clone()))
             .configure(user_routes::route)
-            .service(test_route)
+            .service(health)
     })
     .bind(("127.0.0.1", 3000))?
     .run()
