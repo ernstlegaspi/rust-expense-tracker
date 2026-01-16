@@ -1,7 +1,11 @@
-use actix_web::web;
+use actix_web::web::{ServiceConfig, post, scope};
 
-use crate::handlers::user::create_user;
+use crate::handlers::user::{login, register};
 
-pub fn route(cfg: &mut web::ServiceConfig) {
-    cfg.service(web::scope("/users").route("/", web::post().to(create_user)));
+pub fn route(cfg: &mut ServiceConfig) {
+    cfg.service(
+        scope("/users")
+            .route("/register", post().to(register))
+            .route("/login", post().to(login)),
+    );
 }

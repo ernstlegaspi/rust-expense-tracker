@@ -1,7 +1,8 @@
 use actix_web::HttpResponse;
+use serde_json::json;
 
 #[derive(Debug)]
-pub enum UserError {
+pub enum RegisterError {
     DuplicateEmail,
     Internal(String),
     InvalidEmail,
@@ -10,8 +11,36 @@ pub enum UserError {
     WeakPassword,
 }
 
-pub fn error_response(error: &str) -> HttpResponse {
-    HttpResponse::Conflict().json(serde_json::json!({
+#[derive(Debug)]
+pub enum LoginError {
+    Internal(String),
+    InvalidEmail,
+    PasswordRequired,
+    UserNotFound,
+    WeakPassword,
+    WrongPassword,
+}
+
+pub fn e400(error: &str) -> HttpResponse {
+    HttpResponse::BadRequest().json(json!({
+        "error": error
+    }))
+}
+
+pub fn e404(error: &str) -> HttpResponse {
+    HttpResponse::NotFound().json(json!({
+        "error": error
+    }))
+}
+
+pub fn e409(error: &str) -> HttpResponse {
+    HttpResponse::Conflict().json(json!({
+        "error": error
+    }))
+}
+
+pub fn e500(error: &str) -> HttpResponse {
+    HttpResponse::InternalServerError().json(json!({
         "error": error
     }))
 }
