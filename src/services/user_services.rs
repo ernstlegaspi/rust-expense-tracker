@@ -3,7 +3,7 @@ use sqlx::PgPool;
 
 use crate::{
     errors::errors::UserError,
-    models::user_model::{CreateUser, UserResponse},
+    models::user_model::{Register, UserResponse},
 };
 
 #[derive(Clone)]
@@ -16,9 +16,9 @@ impl UserService {
         Self { pool }
     }
 
-    pub async fn create_user(
+    pub async fn register(
         &self,
-        new_user: CreateUser,
+        new_user: Register,
     ) -> std::result::Result<UserResponse, UserError> {
         match new_user.validate() {
             Ok(()) => (),

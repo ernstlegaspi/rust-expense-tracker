@@ -7,13 +7,13 @@ use zxcvbn::{Score, zxcvbn};
 use crate::errors::errors::UserError;
 
 #[derive(Deserialize, Serialize)]
-pub struct CreateUser {
+pub struct Register {
     pub email: String,
     pub name: String,
     pub password: String,
 }
 
-impl CreateUser {
+impl Register {
     pub fn validate(&self) -> std::result::Result<(), UserError> {
         if self.name.is_empty() {
             return Err(UserError::NameRequired);
