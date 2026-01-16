@@ -1,16 +1,16 @@
-use actix_web::{HttpResponse, Responder, web};
+use actix_web::{HttpResponse, Responder, cookie, web};
 use tracing::error;
 
 use crate::errors::errors::{UserError, error_response};
-use crate::models::user_model::CreateUser;
+use crate::models::user_model::Register;
 use crate::services::{jwt_services::JwtService, user_services::UserService};
 
 pub async fn create_user(
-    new_user_body: web::Json<CreateUser>,
+    new_user_body: web::Json<Register>,
     jwt: web::Data<JwtService>,
     service: web::Data<UserService>,
 ) -> impl Responder {
-    let user = match service.create_user(new_user_body.into_inner()).await {
+    let user = match service.register(new_user_body.into_inner()).await {
         Ok(user) => user,
         Err(e) => {
             error!(error = ?e);
@@ -31,14 +31,24 @@ pub async fn create_user(
     let jti = uuid::Uuid::new_v4().to_string();
     let sub = user.uuid;
 
-    let access_token = match jwt.create_token(15 * 60, jti, sub) {
+    let token = match jwt.create_token(15 * 60, jti, sub) {
         Ok(token) => token,
         Err(_) => return HttpResponse::InternalServerError().body("Token generation failed"),
     };
 
-    HttpResponse::Created().json(serde_json::json!({
-        "email": user.email,
-        "name": user.name,
-        "token": access_token
-    }))
+    HttpResponse::Created()
+        .cookie(
+            cookie::Cookie::build("token", &token)
+                .http_only(true)
+                .secure(true)
+                .same_site(cookie::SameSite::Strict)
+                .path("/")
+                .max_age(cookie::time::Duration::minutes(15))
+                .finish(),
+        )
+        .json(serde_json::json!({
+            "email": user.email,
+            "name": user.name,
+            "token": &token
+        }))
 }
