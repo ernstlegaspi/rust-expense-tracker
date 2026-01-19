@@ -1,2 +1,2 @@
+pub mod auth_services;
 pub mod jwt_services;
-pub mod user_services;

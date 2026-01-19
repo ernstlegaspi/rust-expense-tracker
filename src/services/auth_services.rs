@@ -4,15 +4,15 @@ use std::result::Result;
 
 use crate::{
     errors::errors::{LoginError, RegisterError},
-    models::user_model::{Login, LoginResponse, Register, RegisterResponse},
+    models::auth_model::{Login, LoginResponse, Register, RegisterResponse},
 };
 
 #[derive(Clone)]
-pub struct UserService {
+pub struct AuthService {
     pool: PgPool,
 }
 
-impl UserService {
+impl AuthService {
     pub fn new(pool: PgPool) -> Self {
         Self { pool }
     }

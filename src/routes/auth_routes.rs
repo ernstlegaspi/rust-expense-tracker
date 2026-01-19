@@ -1,6 +1,6 @@
 use actix_web::web::{ServiceConfig, post, scope};
 
-use crate::handlers::user::{login, register};
+use crate::handlers::auth::{login, register};
 
 pub fn route(cfg: &mut ServiceConfig) {
     cfg.service(
