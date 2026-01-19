@@ -56,10 +56,7 @@ impl AuthService {
     }
 
     pub async fn login(&self, body: Login) -> Result<LoginResponse, LoginError> {
-        match body.validate() {
-            Ok(()) => (),
-            Err(e) => return Err(e),
-        };
+        body.validate()?;
 
         let user = sqlx::query_as::<_, LoginResponse>(
             r#"
