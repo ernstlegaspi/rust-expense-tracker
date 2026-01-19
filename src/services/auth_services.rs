@@ -3,8 +3,9 @@ use sqlx::PgPool;
 use std::result::Result;
 
 use crate::{
-    errors::errors::{LoginError, RegisterError},
-    models::auth_model::{Login, LoginResponse, Register, RegisterResponse},
+    errors::errors::{LoginError, RefreshEndpointError, RegisterError},
+    models::auth_model::{AuthResponse, Login, LoginResponse, RefreshResponse, Register},
+    services::{jwt_services::JwtService, redis_services::RedisService},
 };
 
 #[derive(Clone)]
@@ -17,7 +18,7 @@ impl AuthService {
         Self { pool }
     }
 
-    pub async fn register(&self, body: Register) -> Result<RegisterResponse, RegisterError> {
+    pub async fn register(&self, body: Register) -> Result<AuthResponse, RegisterError> {
         body.validate()?;
 
         let hashed_password = match hash(body.password, DEFAULT_COST) {
@@ -29,7 +30,7 @@ impl AuthService {
             }
         };
 
-        let new_user = sqlx::query_as::<_, RegisterResponse>(
+        let new_user = sqlx::query_as::<_, AuthResponse>(
             r#"
                 INSERT INTO users (email, name, password)
                 VALUES ($1, $2, $3)
@@ -55,7 +56,7 @@ impl AuthService {
         Ok(new_user)
     }
 
-    pub async fn login(&self, body: Login) -> Result<LoginResponse, LoginError> {
+    pub async fn login(&self, body: Login) -> Result<AuthResponse, LoginError> {
         body.validate()?;
 
         let user = sqlx::query_as::<_, LoginResponse>(
@@ -79,6 +80,62 @@ impl AuthService {
             Ok(false) => return Err(LoginError::WrongPassword),
             Err(_) => return Err(LoginError::Internal("Invalid hash format".to_string())),
         };
+
+        Ok(AuthResponse {
+            email: user.email,
+            name: user.name,
+            uuid: user.uuid,
+        })
+    }
+
+    pub async fn refresh(
+        &self,
+        cookie: &str,
+        jwt: &JwtService,
+        redis: &RedisService,
+    ) -> Result<RefreshResponse, RefreshEndpointError> {
+        let claims = match jwt.validate_refresh_token(cookie) {
+            Ok(v) => v,
+            Err(_) => return Err(RefreshEndpointError::Unauthorized),
+        };
+
+        match redis.exists(format!("user:{}", claims.jti).as_str()).await {
+            Ok(v) => {
+                if !v {
+                    return Err(RefreshEndpointError::Unauthorized);
+                }
+            }
+            Err(_) => return Err(RefreshEndpointError::Unauthorized),
+        }
+
+        let user = sqlx::query_as::<_, RefreshResponse>(
+            r#"
+                SELECT uuid FROM users
+                WHERE uuid = $1
+            "#,
+        )
+        .bind(claims.sub)
+        .fetch_one(&self.pool)
+        .await;
+
+        let user = match user {
+            Ok(u) => u,
+            Err(sqlx::Error::RowNotFound) => return Err(RefreshEndpointError::NotFound),
+            Err(_) => {
+                return Err(RefreshEndpointError::Internal(
+                    "Internal Server Error.".to_string(),
+                ));
+            }
+        };
+
+        match redis.revoke(format!("user:{}", claims.jti)).await {
+            Ok(()) => (),
+            Err(_) => {
+                return Err(RefreshEndpointError::Internal(
+                    "Internal Server Error.".to_string(),
+                ));
+            }
+        }
 
         Ok(user)
     }

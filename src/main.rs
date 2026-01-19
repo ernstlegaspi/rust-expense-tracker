@@ -47,13 +47,13 @@ async fn main() -> Result<()> {
         .expect("Failed to create pool");
 
     let jwt_service = JwtService::new(jwt_secret);
-    let user_service = AuthService::new(pool);
+    let auth_service = AuthService::new(pool);
     let redis_service = RedisService::new(redis_url.as_str()).expect("Failed to connect to Redis");
 
     HttpServer::new(move || {
         App::new()
             .wrap(TracingLogger::default())
-            .app_data(Data::new(user_service.clone()))
+            .app_data(Data::new(auth_service.clone()))
             .app_data(Data::new(jwt_service.clone()))
             .app_data(Data::new(redis_service.clone()))
             .configure(auth_routes::route)

@@ -1,23 +1,26 @@
 use actix_web::{
-    HttpResponse, Responder,
+    HttpRequest, HttpResponse, Responder,
     cookie::{Cookie, SameSite, time::Duration},
-    web,
+    web::{Data, Json},
 };
 use serde_json::json;
 use tracing::error;
 use uuid::Uuid;
 
-use crate::errors::errors::{LoginError, RegisterError, e400, e404, e409, e500};
-use crate::models::auth_model::{Login, Register};
+use crate::errors::errors::{LoginError, RegisterError, e400, e401, e404, e409, e500};
 use crate::services::{
     auth_services::AuthService, jwt_services::JwtService, redis_services::RedisService,
 };
+use crate::{
+    errors::errors::RefreshEndpointError,
+    models::auth_model::{Login, Register},
+};
 
 pub async fn register(
-    new_user_body: web::Json<Register>,
-    jwt: web::Data<JwtService>,
-    service: web::Data<AuthService>,
-    redis: web::Data<RedisService>,
+    new_user_body: Json<Register>,
+    jwt: Data<JwtService>,
+    service: Data<AuthService>,
+    redis: Data<RedisService>,
 ) -> impl Responder {
     let user = match service.register(new_user_body.into_inner()).await {
         Ok(user) => user,
@@ -68,7 +71,7 @@ pub async fn register(
         }
     };
 
-    let refresh_token = match jwt.create_refresh_token(refresh_token_jti, sub) {
+    let refresh_token = match jwt.create_refresh_token(&refresh_token_jti, sub) {
         Ok(token) => token,
         Err(e) => {
             error!(error = ?e);
@@ -87,10 +90,10 @@ pub async fn register(
 }
 
 pub async fn login(
-    user: web::Json<Login>,
-    jwt: web::Data<JwtService>,
-    service: web::Data<AuthService>,
-    redis: web::Data<RedisService>,
+    user: Json<Login>,
+    jwt: Data<JwtService>,
+    service: Data<AuthService>,
+    redis: Data<RedisService>,
 ) -> impl Responder {
     let user = match service.login(user.into_inner()).await {
         Ok(u) => u,
@@ -136,7 +139,7 @@ pub async fn login(
         }
     };
 
-    let refresh_token = match jwt.create_refresh_token(refresh_token_jti, sub) {
+    let refresh_token = match jwt.create_refresh_token(&refresh_token_jti, sub) {
         Ok(token) => token,
         Err(e) => {
             error!(error = ?e);
@@ -154,6 +157,71 @@ pub async fn login(
         }))
 }
 
+pub async fn refresh(
+    req: HttpRequest,
+    auth: Data<AuthService>,
+    jwt: Data<JwtService>,
+    redis: Data<RedisService>,
+) -> impl Responder {
+    let cookie = match req.cookie("refresh_token") {
+        Some(c) => c,
+        None => return e401("Unauthorized"),
+    };
+
+    let user = match auth
+        .refresh(cookie.value(), jwt.get_ref(), redis.get_ref())
+        .await
+    {
+        Ok(u) => u,
+        Err(e) => match e {
+            RefreshEndpointError::BadRequest => return e400("Bad request"),
+            RefreshEndpointError::Internal(msg) => return e500(&msg),
+            RefreshEndpointError::NotFound => return e404("Not found"),
+            RefreshEndpointError::Unauthorized => return e401("Unauthorized."),
+        },
+    };
+
+    let jti = uuid::Uuid::new_v4().to_string();
+    let sub = user.uuid;
+
+    let token = match jwt.create_access_token(sub) {
+        Ok(token) => token,
+        Err(e) => {
+            error!(error = ?e);
+
+            return e500("Internal Server Error.");
+        }
+    };
+
+    let refresh_token = match jwt.create_refresh_token(&jti, sub) {
+        Ok(token) => token,
+        Err(e) => {
+            error!(error = ?e);
+
+            return e500("Internal Server Error.");
+        }
+    };
+
+    match redis
+        .set(format!("user:{jti}"), &jti, 60 * 60 * 24 * 7)
+        .await
+    {
+        Ok(()) => (),
+        Err(e) => {
+            error!(error = ?e);
+
+            return e500("Internal Server Error.");
+        }
+    }
+
+    HttpResponse::Ok()
+        .cookie(set_cookie_token(token))
+        .cookie(set_cookie_refresh_token(refresh_token))
+        .json(json!({
+            "message": "Token refreshed."
+        }))
+}
+
 fn set_cookie_token<'l>(token: String) -> Cookie<'l> {
     Cookie::build("token", token)
         .http_only(true)
@@ -167,7 +235,7 @@ fn set_cookie_token<'l>(token: String) -> Cookie<'l> {
 fn set_cookie_refresh_token<'l>(refresh_token: String) -> Cookie<'l> {
     Cookie::build("refresh_token", refresh_token)
         .http_only(true)
-        .path("/api/refresh")
+        .path("/api/user/refresh")
         .same_site(SameSite::Strict)
         .secure(true)
         .max_age(Duration::days(7))

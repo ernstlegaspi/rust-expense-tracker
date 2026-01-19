@@ -22,8 +22,22 @@ pub enum LoginError {
     WrongPassword,
 }
 
+#[derive(Debug)]
+pub enum RefreshEndpointError {
+    BadRequest,
+    Internal(String),
+    NotFound,
+    Unauthorized,
+}
+
 pub fn e400(error: &str) -> HttpResponse {
     HttpResponse::BadRequest().json(json!({
+        "error": error
+    }))
+}
+
+pub fn e401(error: &str) -> HttpResponse {
+    HttpResponse::Unauthorized().json(json!({
         "error": error
     }))
 }
