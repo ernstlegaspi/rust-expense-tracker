@@ -34,12 +34,12 @@ pub async fn register(
                     return e400("Name must be at least 3 characters.");
                 }
                 RegisterError::NameRequired => return e400("Name field is required."),
+                RegisterError::PasswordTooLong => return e400("Password too long."),
                 RegisterError::WeakPassword => return e400("Your password is too weak."),
             }
         }
     };
 
-    let token_jti = Uuid::new_v4().to_string();
     let refresh_token_jti = Uuid::new_v4().to_string();
     let sub = user.uuid;
 
@@ -59,7 +59,7 @@ pub async fn register(
         }
     }
 
-    let token = match jwt.create_access_token(token_jti, sub) {
+    let token = match jwt.create_access_token(sub) {
         Ok(token) => token,
         Err(e) => {
             error!(error = ?e);
@@ -108,7 +108,6 @@ pub async fn login(
         }
     };
 
-    let token_jti = Uuid::new_v4().to_string();
     let refresh_token_jti = Uuid::new_v4().to_string();
     let sub = user.uuid;
 
@@ -128,7 +127,7 @@ pub async fn login(
         }
     }
 
-    let token = match jwt.create_access_token(token_jti, sub) {
+    let token = match jwt.create_access_token(sub) {
         Ok(token) => token,
         Err(e) => {
             error!(error = ?e);

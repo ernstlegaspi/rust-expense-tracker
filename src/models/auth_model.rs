@@ -27,12 +27,16 @@ impl Register {
             return Err(RegisterError::NameRequired);
         }
 
-        if self.name.len() < 3 {
+        if self.name.len() < 3 || self.name.len() > 100 {
             return Err(RegisterError::InvalidNameLength);
         }
 
-        if !self.email.validate_email() {
+        if !self.email.validate_email() || self.email.len() > 254 {
             return Err(RegisterError::InvalidEmail);
+        }
+
+        if self.password.len() > 72 {
+            return Err(RegisterError::PasswordTooLong);
         }
 
         let user_inputs = &[self.email.as_str(), self.name.as_str()];
@@ -50,6 +54,7 @@ impl Register {
 pub struct LoginResponse {
     pub email: String,
     pub name: String,
+    #[serde(skip_serializing)]
     pub password: String,
     pub uuid: Uuid,
 }

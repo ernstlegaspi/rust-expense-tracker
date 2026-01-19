@@ -4,11 +4,18 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 #[derive(Deserialize, Serialize)]
-pub struct Claims {
+pub struct RefreshTokenClaims {
     pub sub: Uuid,
     pub exp: i64,
     pub iat: i64,
     pub jti: String,
+}
+
+#[derive(Deserialize, Serialize)]
+pub struct TokenClaims {
+    pub sub: Uuid,
+    pub exp: i64,
+    pub iat: i64,
 }
 
 #[derive(Clone)]
@@ -21,10 +28,24 @@ impl JwtService {
         Self { secret }
     }
 
-    fn create_token(&self, exp: Duration, jti: String, sub: Uuid) -> Result<String, Error> {
-        let claims = Claims {
+    pub fn create_access_token(&self, sub: Uuid) -> Result<String, Error> {
+        let claims = TokenClaims {
             sub,
-            exp: (Utc::now() + exp).timestamp(),
+            exp: (Utc::now() + Duration::minutes(15)).timestamp(),
+            iat: Utc::now().timestamp(),
+        };
+
+        encode(
+            &Header::default(),
+            &claims,
+            &EncodingKey::from_secret(self.secret.as_bytes()),
+        )
+    }
+
+    pub fn create_refresh_token(&self, jti: String, sub: Uuid) -> Result<String, Error> {
+        let claims = RefreshTokenClaims {
+            sub,
+            exp: (Utc::now() + Duration::days(7)).timestamp(),
             iat: Utc::now().timestamp(),
             jti,
         };
@@ -32,15 +53,7 @@ impl JwtService {
         encode(
             &Header::default(),
             &claims,
-            &EncodingKey::from_secret(&self.secret.as_bytes()),
+            &EncodingKey::from_secret(self.secret.as_bytes()),
         )
-    }
-
-    pub fn create_access_token(&self, jti: String, sub: Uuid) -> Result<String, Error> {
-        self.create_token(Duration::minutes(15), jti, sub)
-    }
-
-    pub fn create_refresh_token(&self, jti: String, sub: Uuid) -> Result<String, Error> {
-        self.create_token(Duration::days(7), jti, sub)
     }
 }

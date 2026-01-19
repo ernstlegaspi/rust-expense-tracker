@@ -8,6 +8,7 @@ pub enum RegisterError {
     InvalidEmail,
     InvalidNameLength,
     NameRequired,
+    PasswordTooLong,
     WeakPassword,
 }
 
