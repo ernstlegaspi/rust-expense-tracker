@@ -4,13 +4,13 @@ use tracing::error;
 use uuid::Uuid;
 
 use crate::errors::errors::{LoginError, RegisterError, e400, e404, e409, e500};
-use crate::models::user_model::{Login, Register};
-use crate::services::{jwt_services::JwtService, user_services::UserService};
+use crate::models::auth_model::{Login, Register};
+use crate::services::{auth_services::AuthService, jwt_services::JwtService};
 
 pub async fn register(
     new_user_body: web::Json<Register>,
     jwt: web::Data<JwtService>,
-    service: web::Data<UserService>,
+    service: web::Data<AuthService>,
 ) -> impl Responder {
     let user = match service.register(new_user_body.into_inner()).await {
         Ok(user) => user,
@@ -59,7 +59,7 @@ pub async fn register(
 pub async fn login(
     user: web::Json<Login>,
     jwt: web::Data<JwtService>,
-    service: web::Data<UserService>,
+    service: web::Data<AuthService>,
 ) -> impl Responder {
     let user = match service.login(user.into_inner()).await {
         Ok(u) => u,

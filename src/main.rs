@@ -14,8 +14,8 @@ use tracing_actix_web::TracingLogger;
 use tracing_subscriber::{EnvFilter, layer::SubscriberExt, util::SubscriberInitExt};
 
 use crate::{
-    routes::user_routes,
-    services::{jwt_services::JwtService, user_services::UserService},
+    routes::auth_routes,
+    services::{auth_services::AuthService, jwt_services::JwtService},
 };
 
 #[get("/health")]
@@ -44,14 +44,14 @@ async fn main() -> Result<()> {
         .expect("Failed to create pool");
 
     let jwt_service = JwtService::new(jwt_secret);
-    let user_service = UserService::new(pool);
+    let user_service = AuthService::new(pool);
 
     HttpServer::new(move || {
         App::new()
             .wrap(TracingLogger::default())
             .app_data(Data::new(user_service.clone()))
             .app_data(Data::new(jwt_service.clone()))
-            .configure(user_routes::route)
+            .configure(auth_routes::route)
             .service(health)
     })
     .bind(("127.0.0.1", 3000))?
