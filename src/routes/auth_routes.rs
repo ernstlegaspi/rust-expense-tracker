@@ -7,6 +7,6 @@ pub fn route(cfg: &mut ServiceConfig) {
         scope("/api/user")
             .route("/register", post().to(register))
             .route("/login", post().to(login))
-            .route("/refresh", post().to(login)),
+            .route("/refresh", post().to(refresh)),
     );
 }
