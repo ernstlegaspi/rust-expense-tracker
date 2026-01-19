@@ -1,16 +1,23 @@
-use actix_web::{HttpResponse, Responder, cookie, web};
+use actix_web::{
+    HttpResponse, Responder,
+    cookie::{Cookie, SameSite, time::Duration},
+    web,
+};
 use serde_json::json;
 use tracing::error;
 use uuid::Uuid;
 
 use crate::errors::errors::{LoginError, RegisterError, e400, e404, e409, e500};
 use crate::models::auth_model::{Login, Register};
-use crate::services::{auth_services::AuthService, jwt_services::JwtService};
+use crate::services::{
+    auth_services::AuthService, jwt_services::JwtService, redis_services::RedisService,
+};
 
 pub async fn register(
     new_user_body: web::Json<Register>,
     jwt: web::Data<JwtService>,
     service: web::Data<AuthService>,
+    redis: web::Data<RedisService>,
 ) -> impl Responder {
     let user = match service.register(new_user_body.into_inner()).await {
         Ok(user) => user,
@@ -32,24 +39,47 @@ pub async fn register(
         }
     };
 
-    let jti = Uuid::new_v4().to_string();
+    let token_jti = Uuid::new_v4().to_string();
+    let refresh_token_jti = Uuid::new_v4().to_string();
     let sub = user.uuid;
 
-    let token = match jwt.create_token(15, jti, sub) {
+    match redis
+        .set(
+            format!("user:{refresh_token_jti}"),
+            &refresh_token_jti,
+            60 * 60 * 24 * 7,
+        )
+        .await
+    {
+        Ok(()) => (),
+        Err(e) => {
+            error!(error = ?e);
+
+            return e500("Internal Server Error.");
+        }
+    }
+
+    let token = match jwt.create_access_token(token_jti, sub) {
         Ok(token) => token,
-        Err(_) => return e500("Token generation failed"),
+        Err(e) => {
+            error!(error = ?e);
+
+            return e500("Internal Server Error.");
+        }
+    };
+
+    let refresh_token = match jwt.create_refresh_token(refresh_token_jti, sub) {
+        Ok(token) => token,
+        Err(e) => {
+            error!(error = ?e);
+
+            return e500("Internal Server Error.");
+        }
     };
 
     HttpResponse::Created()
-        .cookie(
-            cookie::Cookie::build("token", &token)
-                .http_only(true)
-                .secure(true)
-                .same_site(cookie::SameSite::Strict)
-                .path("/")
-                .max_age(cookie::time::Duration::minutes(15))
-                .finish(),
-        )
+        .cookie(set_cookie_token(token))
+        .cookie(set_cookie_refresh_token(refresh_token))
         .json(json!({
             "email": user.email,
             "name": user.name,
@@ -60,6 +90,7 @@ pub async fn login(
     user: web::Json<Login>,
     jwt: web::Data<JwtService>,
     service: web::Data<AuthService>,
+    redis: web::Data<RedisService>,
 ) -> impl Responder {
     let user = match service.login(user.into_inner()).await {
         Ok(u) => u,
@@ -77,21 +108,69 @@ pub async fn login(
         }
     };
 
-    let jti = Uuid::new_v4().to_string();
-    let token = match jwt.create_token(15, jti, user.uuid) {
-        Ok(t) => t,
-        Err(_) => return e500("Token generation failed"),
+    let token_jti = Uuid::new_v4().to_string();
+    let refresh_token_jti = Uuid::new_v4().to_string();
+    let sub = user.uuid;
+
+    match redis
+        .set(
+            format!("user:{refresh_token_jti}"),
+            &refresh_token_jti,
+            60 * 60 * 24 * 7,
+        )
+        .await
+    {
+        Ok(()) => (),
+        Err(e) => {
+            error!(error = ?e);
+
+            return e500("Internal Server Error.");
+        }
+    }
+
+    let token = match jwt.create_access_token(token_jti, sub) {
+        Ok(token) => token,
+        Err(e) => {
+            error!(error = ?e);
+
+            return e500("Internal Server Error.");
+        }
+    };
+
+    let refresh_token = match jwt.create_refresh_token(refresh_token_jti, sub) {
+        Ok(token) => token,
+        Err(e) => {
+            error!(error = ?e);
+
+            return e500("Internal Server Error.");
+        }
     };
 
     HttpResponse::Ok()
-        .cookie(
-            cookie::Cookie::build("token", &token)
-                .http_only(true)
-                .secure(true)
-                .same_site(cookie::SameSite::Strict)
-                .path("/")
-                .max_age(cookie::time::Duration::minutes(15))
-                .finish(),
-        )
-        .json(json!({ "email": user.email }))
+        .cookie(set_cookie_token(token))
+        .cookie(set_cookie_refresh_token(refresh_token))
+        .json(json!({
+            "email": user.email,
+            "name": user.name,
+        }))
+}
+
+fn set_cookie_token<'l>(token: String) -> Cookie<'l> {
+    Cookie::build("token", token)
+        .http_only(true)
+        .secure(true)
+        .same_site(SameSite::Strict)
+        .path("/")
+        .max_age(Duration::minutes(15))
+        .finish()
+}
+
+fn set_cookie_refresh_token<'l>(refresh_token: String) -> Cookie<'l> {
+    Cookie::build("refresh_token", refresh_token)
+        .http_only(true)
+        .path("/api/refresh")
+        .same_site(SameSite::Strict)
+        .secure(true)
+        .max_age(Duration::days(7))
+        .finish()
 }

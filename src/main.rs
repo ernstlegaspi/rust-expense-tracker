@@ -15,7 +15,9 @@ use tracing_subscriber::{EnvFilter, layer::SubscriberExt, util::SubscriberInitEx
 
 use crate::{
     routes::auth_routes,
-    services::{auth_services::AuthService, jwt_services::JwtService},
+    services::{
+        auth_services::AuthService, jwt_services::JwtService, redis_services::RedisService,
+    },
 };
 
 #[get("/health")]
@@ -36,6 +38,7 @@ async fn main() -> Result<()> {
 
     let database_url = var("DATABASE_URL").expect("DATABASE_URL must be set.");
     let jwt_secret = var("JWT_SECRET").expect("JWT_SECRET must be set.");
+    let redis_url = var("REDIS_URL").expect("REDIS_URL must be set");
 
     let pool = PgPoolOptions::new()
         .max_connections(5)
@@ -45,12 +48,14 @@ async fn main() -> Result<()> {
 
     let jwt_service = JwtService::new(jwt_secret);
     let user_service = AuthService::new(pool);
+    let redis_service = RedisService::new(redis_url.as_str()).expect("Failed to connect to Redis");
 
     HttpServer::new(move || {
         App::new()
             .wrap(TracingLogger::default())
             .app_data(Data::new(user_service.clone()))
             .app_data(Data::new(jwt_service.clone()))
+            .app_data(Data::new(redis_service.clone()))
             .configure(auth_routes::route)
             .service(health)
     })
