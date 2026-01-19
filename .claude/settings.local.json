@@ -1,7 +1,11 @@
 {
   "permissions": {
     "allow": [
-      "Bash(dir:*)"
+      "Bash(dir:*)",
+      "Bash(git -C \"D:\\\\rust\\\\actix\\\\expense-tracker\" log --oneline -20)",
+      "Bash(git -C \"D:\\\\rust\\\\actix\\\\expense-tracker\" show 8ee073c:Cargo.toml)",
+      "Bash(cat:*)",
+      "Bash(find:*)"
     ]
   }
 }

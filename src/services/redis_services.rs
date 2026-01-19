@@ -26,7 +26,7 @@ impl RedisService {
         con.get(k).await
     }
 
-    pub async fn exists(&self, k: String) -> Result<bool, RedisError> {
+    pub async fn exists(&self, k: &str) -> Result<bool, RedisError> {
         let mut con = self.client.get_multiplexed_async_connection().await?;
         con.exists(k).await
     }

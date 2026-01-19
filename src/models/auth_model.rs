@@ -8,7 +8,7 @@ use zxcvbn::{Score, zxcvbn};
 use crate::errors::errors::{LoginError, RegisterError};
 
 #[derive(FromRow, Serialize)]
-pub struct RegisterResponse {
+pub struct AuthResponse {
     pub email: String,
     pub name: String,
     pub uuid: Uuid,
@@ -54,7 +54,6 @@ impl Register {
 pub struct LoginResponse {
     pub email: String,
     pub name: String,
-    #[serde(skip_serializing)]
     pub password: String,
     pub uuid: Uuid,
 }
@@ -81,4 +80,9 @@ impl Login {
 
         Ok(())
     }
+}
+
+#[derive(FromRow, Deserialize)]
+pub struct RefreshResponse {
+    pub uuid: Uuid,
 }
