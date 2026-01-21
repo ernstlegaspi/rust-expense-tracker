@@ -24,7 +24,6 @@ pub enum LoginError {
 
 #[derive(Debug)]
 pub enum RefreshEndpointError {
-    BadRequest,
     Internal(String),
     NotFound,
     Unauthorized,
