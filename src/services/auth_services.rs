@@ -4,7 +4,7 @@ use std::result::Result;
 
 use crate::{
     errors::errors::{LoginError, RefreshEndpointError, RegisterError},
-    models::auth_model::{AuthResponse, Login, LoginResponse, RefreshResponse, Register},
+    models::auth_models::{AuthResponse, Login, LoginResponse, RefreshResponse, Register},
     services::{jwt_services::JwtService, redis_services::RedisService},
 };
 

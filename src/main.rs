@@ -1,5 +1,6 @@
 mod errors;
 mod handlers;
+mod middleware;
 mod models;
 mod routes;
 mod services;

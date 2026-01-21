@@ -13,7 +13,7 @@ use crate::services::{
 };
 use crate::{
     errors::errors::RefreshEndpointError,
-    models::auth_model::{Login, Register},
+    models::auth_models::{Login, Register},
 };
 
 pub async fn register(
@@ -174,7 +174,6 @@ pub async fn refresh(
     {
         Ok(u) => u,
         Err(e) => match e {
-            RefreshEndpointError::BadRequest => return e400("Bad request"),
             RefreshEndpointError::Internal(msg) => return e500(&msg),
             RefreshEndpointError::NotFound => return e404("Not found"),
             RefreshEndpointError::Unauthorized => return e401("Unauthorized."),

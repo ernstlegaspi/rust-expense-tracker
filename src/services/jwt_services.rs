@@ -42,6 +42,16 @@ impl JwtService {
         )
     }
 
+    pub fn validate_token(&self, token: &str) -> Result<TokenClaims, Error> {
+        let token = decode::<TokenClaims>(
+            token,
+            &DecodingKey::from_secret(self.secret.as_bytes()),
+            &Validation::default(),
+        )?;
+
+        Ok(token.claims)
+    }
+
     pub fn create_refresh_token(&self, jti: &str, sub: Uuid) -> Result<String, Error> {
         let claims = RefreshTokenClaims {
             sub,
