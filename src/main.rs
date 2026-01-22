@@ -15,9 +15,10 @@ use tracing_actix_web::TracingLogger;
 use tracing_subscriber::{EnvFilter, layer::SubscriberExt, util::SubscriberInitExt};
 
 use crate::{
-    routes::auth_routes,
+    routes::{auth_routes, category_routes},
     services::{
-        auth_services::AuthService, jwt_services::JwtService, redis_services::RedisService,
+        auth_services::AuthService, category_services::CategoryService, jwt_services::JwtService,
+        redis_services::RedisService,
     },
 };
 
@@ -47,17 +48,20 @@ async fn main() -> Result<()> {
         .await
         .expect("Failed to create pool");
 
+    let auth_service = AuthService::new(pool.clone());
+    let category_service = CategoryService::new(pool.clone());
     let jwt_service = JwtService::new(jwt_secret);
-    let auth_service = AuthService::new(pool);
     let redis_service = RedisService::new(redis_url.as_str()).expect("Failed to connect to Redis");
 
     HttpServer::new(move || {
         App::new()
             .wrap(TracingLogger::default())
             .app_data(Data::new(auth_service.clone()))
+            .app_data(Data::new(category_service.clone()))
             .app_data(Data::new(jwt_service.clone()))
             .app_data(Data::new(redis_service.clone()))
             .configure(auth_routes::route)
+            .configure(category_routes::route)
             .service(health)
     })
     .bind(("127.0.0.1", 3000))?

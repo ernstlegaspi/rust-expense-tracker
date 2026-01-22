@@ -4,7 +4,7 @@ use sqlx::PgPool;
 use std::result::Result;
 
 use crate::{
-    errors::errors::{AuthError, ValidationError},
+    errors::auth_errors::{AuthError, ValidationError},
     models::auth_models::{AuthResponse, Login, LoginResponse, RefreshResponse, Register},
     services::{jwt_services::JwtService, redis_services::RedisService},
 };

@@ -5,7 +5,7 @@ use uuid::Uuid;
 use validator::ValidateEmail;
 use zxcvbn::{Score, zxcvbn};
 
-use crate::errors::errors::ValidationError;
+use crate::errors::auth_errors::ValidationError;
 
 #[derive(FromRow, Serialize)]
 pub struct AuthResponse {
