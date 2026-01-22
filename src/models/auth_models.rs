@@ -5,13 +5,13 @@ use uuid::Uuid;
 use validator::ValidateEmail;
 use zxcvbn::{Score, zxcvbn};
 
-use crate::errors::errors::{LoginError, RegisterError};
+use crate::errors::errors::ValidationError;
 
 #[derive(FromRow, Serialize)]
 pub struct AuthResponse {
     pub email: String,
+    pub id: Uuid,
     pub name: String,
-    pub uuid: Uuid,
 }
 
 #[derive(Deserialize, Serialize)]
@@ -22,28 +22,28 @@ pub struct Register {
 }
 
 impl Register {
-    pub fn validate(&self) -> Result<(), RegisterError> {
+    pub fn validate(&self) -> Result<(), ValidationError> {
         if self.name.is_empty() {
-            return Err(RegisterError::NameRequired);
+            return Err(ValidationError::NameRequired);
         }
 
         if self.name.len() < 3 || self.name.len() > 100 {
-            return Err(RegisterError::InvalidNameLength);
+            return Err(ValidationError::NameTooShort);
         }
 
         if !self.email.validate_email() || self.email.len() > 254 {
-            return Err(RegisterError::InvalidEmail);
+            return Err(ValidationError::InvalidEmail);
         }
 
         if self.password.len() > 72 {
-            return Err(RegisterError::PasswordTooLong);
+            return Err(ValidationError::PasswordTooLong);
         }
 
         let user_inputs = &[self.email.as_str(), self.name.as_str()];
         let estimate = zxcvbn(&self.password, user_inputs);
 
         if estimate.score() < Score::Three {
-            return Err(RegisterError::WeakPassword);
+            return Err(ValidationError::WeakPassword);
         }
 
         Ok(())
@@ -53,9 +53,9 @@ impl Register {
 #[derive(FromRow, Serialize)]
 pub struct LoginResponse {
     pub email: String,
+    pub id: Uuid,
     pub name: String,
     pub password: String,
-    pub uuid: Uuid,
 }
 
 #[derive(Deserialize, Serialize)]
@@ -65,17 +65,17 @@ pub struct Login {
 }
 
 impl Login {
-    pub fn validate(&self) -> Result<(), LoginError> {
+    pub fn validate(&self) -> Result<(), ValidationError> {
         if !self.email.validate_email() {
-            return Err(LoginError::InvalidEmail);
+            return Err(ValidationError::InvalidEmail);
         }
 
         if self.password.is_empty() {
-            return Err(LoginError::PasswordRequired);
+            return Err(ValidationError::PasswordRequired);
         }
 
         if self.password.len() < 8 {
-            return Err(LoginError::WeakPassword);
+            return Err(ValidationError::WeakPassword);
         }
 
         Ok(())
