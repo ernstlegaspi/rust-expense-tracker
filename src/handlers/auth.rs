@@ -1,5 +1,5 @@
 use actix_web::{
-    HttpRequest, HttpResponse, Responder,
+    HttpRequest, HttpResponse, Responder, ResponseError,
     cookie::{Cookie, SameSite, time::Duration},
     web::{Data, Json},
 };
@@ -7,13 +7,10 @@ use serde_json::json;
 use tracing::error;
 use uuid::Uuid;
 
-use crate::errors::errors::{LoginError, RegisterError, e400, e401, e404, e409, e500};
+use crate::errors::errors::{e401, e500};
+use crate::models::auth_models::{Login, Register};
 use crate::services::{
     auth_services::AuthService, jwt_services::JwtService, redis_services::RedisService,
-};
-use crate::{
-    errors::errors::RefreshEndpointError,
-    models::auth_models::{Login, Register},
 };
 
 pub async fn register(
@@ -27,24 +24,12 @@ pub async fn register(
         Err(e) => {
             error!(error = ?e);
 
-            match e {
-                RegisterError::DuplicateEmail => {
-                    return e409("Email is already existing");
-                }
-                RegisterError::Internal(msg) => return e500(&msg),
-                RegisterError::InvalidEmail => return e400("Please enter a valid email."),
-                RegisterError::InvalidNameLength => {
-                    return e400("Name must be at least 3 characters.");
-                }
-                RegisterError::NameRequired => return e400("Name field is required."),
-                RegisterError::PasswordTooLong => return e400("Password too long."),
-                RegisterError::WeakPassword => return e400("Your password is too weak."),
-            }
+            return e.error_response();
         }
     };
 
     let refresh_token_jti = Uuid::new_v4().to_string();
-    let sub = user.uuid;
+    let sub = user.id;
 
     match redis
         .set(
@@ -100,19 +85,12 @@ pub async fn login(
         Err(e) => {
             error!(error = ?e);
 
-            match e {
-                LoginError::Internal(msg) => return e500(&msg),
-                LoginError::InvalidEmail => return e400("Please enter a valid email."),
-                LoginError::PasswordRequired => return e400("Password is required."),
-                LoginError::UserNotFound => return e404("User not found."),
-                LoginError::WeakPassword => return e400("Password must be at least 8 characters."),
-                LoginError::WrongPassword => return e400("Incorrect password."),
-            }
+            return e.error_response();
         }
     };
 
     let refresh_token_jti = Uuid::new_v4().to_string();
-    let sub = user.uuid;
+    let sub = user.id;
 
     match redis
         .set(
@@ -173,11 +151,11 @@ pub async fn refresh(
         .await
     {
         Ok(u) => u,
-        Err(e) => match e {
-            RefreshEndpointError::Internal(msg) => return e500(&msg),
-            RefreshEndpointError::NotFound => return e404("Not found"),
-            RefreshEndpointError::Unauthorized => return e401("Unauthorized."),
-        },
+        Err(e) => {
+            error!(error = ?e);
+
+            return e.error_response();
+        }
     };
 
     let jti = uuid::Uuid::new_v4().to_string();
