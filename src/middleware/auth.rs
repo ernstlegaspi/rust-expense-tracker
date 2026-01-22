@@ -4,7 +4,7 @@ use std::future::{Ready, ready};
 use crate::services::jwt_services::JwtService;
 
 pub struct AuthMiddleware {
-    pub uuid: uuid::Uuid,
+    pub user_id: uuid::Uuid,
 }
 
 impl FromRequest for AuthMiddleware {
@@ -25,7 +25,9 @@ impl FromRequest for AuthMiddleware {
                 .validate_token(cookie.value())
                 .map_err(|_| ErrorUnauthorized("Invalid token"))?;
 
-            Ok(AuthMiddleware { uuid: claims.sub })
+            Ok(AuthMiddleware {
+                user_id: claims.sub,
+            })
         };
 
         ready(result())
