@@ -84,5 +84,5 @@ impl Login {
 
 #[derive(FromRow, Deserialize)]
 pub struct RefreshResponse {
-    pub uuid: Uuid,
+    pub id: Uuid,
 }

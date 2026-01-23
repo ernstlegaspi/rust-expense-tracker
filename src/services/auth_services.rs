@@ -96,7 +96,7 @@ impl AuthService {
             .map_err(|_| return AuthError::Unauthorized)?;
 
         let exists = redis
-            .exists(format!("user:{}", claims.jti).as_str())
+            .exists(format!("user:{}:refresh:{}", claims.sub, claims.jti).as_str())
             .await
             .context("failed to check refresh token")?;
 
@@ -106,8 +106,8 @@ impl AuthService {
 
         let user = sqlx::query_as::<_, RefreshResponse>(
             r#"
-                SELECT uuid FROM users
-                WHERE uuid = $1
+                SELECT id FROM users
+                WHERE id = $1
             "#,
         )
         .bind(claims.sub)
@@ -123,7 +123,7 @@ impl AuthService {
         })?;
 
         redis
-            .revoke(format!("user:{}", claims.jti))
+            .revoke(format!("user:{}:refresh:{}", claims.sub, claims.jti))
             .await
             .context("internal server error")?;
 

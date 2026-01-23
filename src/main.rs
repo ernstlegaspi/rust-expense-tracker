@@ -15,10 +15,10 @@ use tracing_actix_web::TracingLogger;
 use tracing_subscriber::{EnvFilter, layer::SubscriberExt, util::SubscriberInitExt};
 
 use crate::{
-    routes::{auth_routes, category_routes},
+    routes::{auth_routes, category_routes, expense_routes},
     services::{
-        auth_services::AuthService, category_services::CategoryService, jwt_services::JwtService,
-        redis_services::RedisService,
+        auth_services::AuthService, category_services::CategoryService,
+        expense_services::ExpenseServices, jwt_services::JwtService, redis_services::RedisService,
     },
 };
 
@@ -48,8 +48,12 @@ async fn main() -> Result<()> {
         .await
         .expect("Failed to create pool");
 
+    // services
     let auth_service = AuthService::new(pool.clone());
     let category_service = CategoryService::new(pool.clone());
+    let expense_service = ExpenseServices::new(pool.clone());
+
+    // configs
     let jwt_service = JwtService::new(jwt_secret);
     let redis_service = RedisService::new(redis_url.as_str()).expect("Failed to connect to Redis");
 
@@ -58,10 +62,12 @@ async fn main() -> Result<()> {
             .wrap(TracingLogger::default())
             .app_data(Data::new(auth_service.clone()))
             .app_data(Data::new(category_service.clone()))
+            .app_data(Data::new(expense_service.clone()))
             .app_data(Data::new(jwt_service.clone()))
             .app_data(Data::new(redis_service.clone()))
             .configure(auth_routes::route)
             .configure(category_routes::route)
+            .configure(expense_routes::route)
             .service(health)
     })
     .bind(("127.0.0.1", 3000))?
