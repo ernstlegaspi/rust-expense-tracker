@@ -31,7 +31,8 @@ impl JwtService {
     pub fn create_access_token(&self, sub: Uuid) -> Result<String, Error> {
         let claims = TokenClaims {
             sub,
-            exp: (Utc::now() + Duration::minutes(15)).timestamp(),
+            exp: (Utc::now() + Duration::seconds(15)).timestamp(),
+            // exp: (Utc::now() + Duration::minutes(15)).timestamp(),
             iat: Utc::now().timestamp(),
         };
 

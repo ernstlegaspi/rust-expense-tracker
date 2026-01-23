@@ -13,6 +13,11 @@ impl RedisService {
         Ok(Self { client })
     }
 
+    pub async fn incr(&self, k: String) -> Result<(), RedisError> {
+        let mut con = self.client.get_multiplexed_async_connection().await?;
+        con.incr(k, 1).await
+    }
+
     pub async fn set<T>(&self, k: String, v: T, exp: u64) -> Result<(), RedisError>
     where
         T: ToSingleRedisArg + Send + Sync,

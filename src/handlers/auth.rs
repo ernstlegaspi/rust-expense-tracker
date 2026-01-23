@@ -33,7 +33,7 @@ pub async fn register(
 
     match redis
         .set(
-            format!("user:{refresh_token_jti}"),
+            format!("user:{}:refresh:{refresh_token_jti}", sub),
             &refresh_token_jti,
             60 * 60 * 24 * 7,
         )
@@ -94,7 +94,7 @@ pub async fn login(
 
     match redis
         .set(
-            format!("user:{refresh_token_jti}"),
+            format!("user:{}:refresh:{refresh_token_jti}", sub),
             &refresh_token_jti,
             60 * 60 * 24 * 7,
         )
@@ -159,7 +159,7 @@ pub async fn refresh(
     };
 
     let jti = uuid::Uuid::new_v4().to_string();
-    let sub = user.uuid;
+    let sub = user.id;
 
     let token = match jwt.create_access_token(sub) {
         Ok(token) => token,
@@ -180,7 +180,11 @@ pub async fn refresh(
     };
 
     match redis
-        .set(format!("user:{jti}"), &jti, 60 * 60 * 24 * 7)
+        .set(
+            format!("user:{}:refresh:{jti}", sub),
+            &jti,
+            60 * 60 * 24 * 7,
+        )
         .await
     {
         Ok(()) => (),
@@ -205,7 +209,8 @@ fn set_cookie_token<'l>(token: String) -> Cookie<'l> {
         .secure(true)
         .same_site(SameSite::Strict)
         .path("/")
-        .max_age(Duration::minutes(15))
+        .max_age(Duration::seconds(15))
+        // .max_age(Duration::minutes(15))
         .finish()
 }
 

@@ -58,17 +58,8 @@ impl actix_web::ResponseError for AuthError {
     }
 
     fn error_response(&self) -> HttpResponse {
-        match self {
-            AuthError::Internal(e) => {
-                tracing::error!(error = ?e);
-
-                HttpResponse::InternalServerError().json(ErrorResponse {
-                    message: "Internal Server Error".to_string(),
-                })
-            }
-            _ => HttpResponse::build(self.status_code()).json(ErrorResponse {
-                message: self.to_string(),
-            }),
-        }
+        HttpResponse::build(self.status_code()).json(ErrorResponse {
+            message: self.to_string(),
+        })
     }
 }

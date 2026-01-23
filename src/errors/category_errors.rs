@@ -32,10 +32,8 @@ impl actix_web::ResponseError for CategoryError {
     }
 
     fn error_response(&self) -> HttpResponse {
-        match self {
-            _ => HttpResponse::build(self.status_code()).json(ErrorResponse {
-                message: self.to_string(),
-            }),
-        }
+        HttpResponse::build(self.status_code()).json(ErrorResponse {
+            message: self.to_string(),
+        })
     }
 }
