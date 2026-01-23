@@ -38,7 +38,7 @@ pub async fn get_user_expenses(
     redis: Data<RedisService>,
     service: Data<ExpenseServices>,
 ) -> impl Responder {
-    let expenses = match service
+    let expenses_with_total = match service
         .get_user_expenses(params.into_inner(), &redis, auth.user_id)
         .await
     {
@@ -50,5 +50,5 @@ pub async fn get_user_expenses(
         }
     };
 
-    HttpResponse::Ok().json(expenses)
+    HttpResponse::Ok().json(expenses_with_total)
 }

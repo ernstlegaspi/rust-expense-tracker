@@ -53,6 +53,12 @@ pub struct ExpenseResponse {
     tags: Option<Vec<String>>,
 }
 
+#[derive(Deserialize, Serialize)]
+pub struct ExpensesWithTotal {
+    pub expenses: Vec<ExpenseResponse>,
+    pub total: Decimal,
+}
+
 #[derive(Deserialize)]
 pub struct QueryParams {
     #[serde(default = "default_page")]
