@@ -3,11 +3,11 @@ use uuid::Uuid;
 
 use crate::{
     errors::expense_errors::ExpenseError,
-    models::expense_model::{AddExpenseRequest, ExpenseResponse, QueryParams},
+    models::expense_model::{AddExpenseRequest, ExpenseResponse, ExpensesWithTotal, QueryParams},
     services::redis_services::RedisService,
 };
 
-use sqlx::query_as;
+use sqlx::{query_as, query_scalar};
 
 #[derive(Debug, Clone)]
 pub struct ExpenseServices {
@@ -71,7 +71,7 @@ impl ExpenseServices {
         params: QueryParams,
         redis: &RedisService,
         user_id: Uuid,
-    ) -> Result<Vec<ExpenseResponse>, ExpenseError> {
+    ) -> Result<ExpensesWithTotal, ExpenseError> {
         let limit: i64 = 10;
         let page = params.page.max(1);
         let offset = (page - 1) * limit;
@@ -104,17 +104,29 @@ impl ExpenseServices {
         .bind(limit)
         .bind(offset)
         .fetch_all(&self.pool)
-        .await;
+        .await
+        .map_err(ExpenseError::internal)?;
 
-        let expenses = expenses.map_err(ExpenseError::internal)?;
+        let total: rust_decimal::Decimal = query_scalar(
+            r#"
+                SELECT COALESCE(SUM(amount), 0) FROM expense
+                WHERE user_id = $1
+            "#,
+        )
+        .bind(user_id)
+        .fetch_one(&self.pool)
+        .await
+        .map_err(ExpenseError::internal)?;
 
-        let expenses_json = serde_json::to_string(&expenses).map_err(ExpenseError::internal)?;
+        let result = ExpensesWithTotal { expenses, total };
+
+        let json = serde_json::to_string(&result).map_err(ExpenseError::internal)?;
 
         redis
-            .set(key, expenses_json, 300)
+            .set(key, json, 300)
             .await
             .map_err(ExpenseError::internal)?;
 
-        Ok(expenses)
+        Ok(result)
     }
 }
