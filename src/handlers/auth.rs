@@ -21,11 +21,7 @@ pub async fn register(
 ) -> impl Responder {
     let user = match service.register(new_user_body.into_inner()).await {
         Ok(user) => user,
-        Err(e) => {
-            error!(error = ?e);
-
-            return e.error_response();
-        }
+        Err(e) => return e.error_response(),
     };
 
     let refresh_token_jti = Uuid::new_v4().to_string();
@@ -82,11 +78,7 @@ pub async fn login(
 ) -> impl Responder {
     let user = match service.login(user.into_inner()).await {
         Ok(u) => u,
-        Err(e) => {
-            error!(error = ?e);
-
-            return e.error_response();
-        }
+        Err(e) => return e.error_response(),
     };
 
     let refresh_token_jti = Uuid::new_v4().to_string();
@@ -151,11 +143,7 @@ pub async fn refresh(
         .await
     {
         Ok(u) => u,
-        Err(e) => {
-            error!(error = ?e);
-
-            return e.error_response();
-        }
+        Err(e) => return e.error_response(),
     };
 
     let jti = uuid::Uuid::new_v4().to_string();

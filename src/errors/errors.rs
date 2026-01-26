@@ -1,6 +1,7 @@
 use actix_web::HttpResponse;
 use serde_json::json;
 
+#[allow(dead_code)]
 pub fn e400(error: &str) -> HttpResponse {
     HttpResponse::BadRequest().json(json!({
         "error": error
@@ -13,12 +14,14 @@ pub fn e401(error: &str) -> HttpResponse {
     }))
 }
 
+#[allow(dead_code)]
 pub fn e404(error: &str) -> HttpResponse {
     HttpResponse::NotFound().json(json!({
         "error": error
     }))
 }
 
+#[allow(dead_code)]
 pub fn e409(error: &str) -> HttpResponse {
     HttpResponse::Conflict().json(json!({
         "error": error

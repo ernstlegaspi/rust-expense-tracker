@@ -26,7 +26,7 @@ impl RedisService {
         con.set_ex(k, v, exp).await
     }
 
-    pub async fn get(&self, k: String) -> Result<Option<String>, RedisError> {
+    pub async fn get(&self, k: &str) -> Result<Option<String>, RedisError> {
         let mut con = self.client.get_multiplexed_async_connection().await?;
         con.get(k).await
     }

@@ -11,6 +11,12 @@ pub enum ExpenseError {
     #[error("description too long")]
     DescriptionTooLong,
 
+    #[error("expense not found")]
+    ExpenseNotFound,
+
+    #[error("foreign key not found")]
+    ForeignKeyNotFound,
+
     #[error("internal server error")]
     Internal(#[from] anyhow::Error),
 
@@ -29,12 +35,15 @@ struct ErrorResponse {
 impl actix_web::ResponseError for ExpenseError {
     fn status_code(&self) -> StatusCode {
         match self {
+            ExpenseError::ExpenseNotFound => StatusCode::NOT_FOUND,
             ExpenseError::Internal(_) => StatusCode::INTERNAL_SERVER_ERROR,
             _ => StatusCode::BAD_REQUEST,
         }
     }
 
     fn error_response(&self) -> HttpResponse {
+        tracing::error!(error = ?self.to_string());
+
         HttpResponse::build(self.status_code()).json(ErrorResponse {
             message: self.to_string(),
         })
