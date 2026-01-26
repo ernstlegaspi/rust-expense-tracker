@@ -4,6 +4,7 @@ mod middleware;
 mod models;
 mod routes;
 mod services;
+mod utils;
 
 use actix_web::{App, HttpServer, Responder, get, web::Data};
 use sqlx::postgres::PgPoolOptions;
