@@ -1,15 +1,13 @@
 use crate::{
     middleware::auth::AuthMiddleware,
-    models::expense_model::{AddExpenseRequest, QueryParams},
+    models::expense_model::{AddExpenseRequest, ExpensePath, PageParams},
     services::{expense_services::ExpenseServices, redis_services::RedisService},
 };
 
 use actix_web::{
     HttpResponse, Responder, ResponseError,
-    web::{Data, Json, Query},
+    web::{Data, Json, Path, Query},
 };
-
-use tracing::error;
 
 pub async fn add_expense(
     auth: AuthMiddleware,
@@ -22,11 +20,7 @@ pub async fn add_expense(
         .await
     {
         Ok(s) => s,
-        Err(e) => {
-            error!(error = ?e);
-
-            return e.error_response();
-        }
+        Err(e) => return e.error_response(),
     };
 
     HttpResponse::Created().json(service)
@@ -34,7 +28,7 @@ pub async fn add_expense(
 
 pub async fn get_user_expenses(
     auth: AuthMiddleware,
-    params: Query<QueryParams>,
+    params: Query<PageParams>,
     redis: Data<RedisService>,
     service: Data<ExpenseServices>,
 ) -> impl Responder {
@@ -43,12 +37,23 @@ pub async fn get_user_expenses(
         .await
     {
         Ok(e) => e,
-        Err(e) => {
-            error!(error = ?e);
-
-            return e.error_response();
-        }
+        Err(e) => return e.error_response(),
     };
 
     HttpResponse::Ok().json(expenses_with_total)
+}
+
+pub async fn get_single_expense_per_user(
+    auth: AuthMiddleware,
+    params: Path<ExpensePath>,
+    service: Data<ExpenseServices>,
+    redis: Data<RedisService>,
+) -> impl Responder {
+    match service
+        .get_single_expense_per_user(params.into_inner(), &redis, auth.user_id)
+        .await
+    {
+        Ok(expense) => HttpResponse::Ok().json(expense),
+        Err(e) => e.error_response(),
+    }
 }

@@ -40,31 +40,48 @@ impl AddExpenseRequest {
 
 #[derive(Deserialize, FromRow, Serialize)]
 pub struct ExpenseResponse {
-    id: Uuid,
-    amount: Decimal,
-    description: String,
-    user_id: Uuid,
-    category_id: Uuid,
-    date: NaiveDate,
-    created_at: Option<DateTime<Utc>>,
-    updated_at: Option<DateTime<Utc>>,
-    payment_method: Option<String>,
-    is_recurring: bool,
-    tags: Option<Vec<String>>,
+    pub id: Uuid,
+    pub amount: Decimal,
+    pub description: String,
+    pub user_id: Uuid,
+    pub category_id: Uuid,
+    pub date: NaiveDate,
+    pub created_at: Option<DateTime<Utc>>,
+    pub updated_at: Option<DateTime<Utc>>,
+    pub payment_method: Option<String>,
+    pub is_recurring: bool,
+    pub tags: Option<Vec<String>>,
 }
 
 #[derive(Deserialize, Serialize)]
-pub struct ExpensesWithTotal {
+pub struct ExpensesTotal {
     pub expenses: Vec<ExpenseResponse>,
     pub total: Decimal,
 }
 
+#[derive(Deserialize, Serialize)]
+pub struct ExpensesTotalCached {
+    pub expenses_total: ExpensesTotal,
+    pub cached: bool,
+}
+
 #[derive(Deserialize)]
-pub struct QueryParams {
+pub struct PageParams {
     #[serde(default = "default_page")]
     pub page: i64,
 }
 
 fn default_page() -> i64 {
     1
+}
+
+#[derive(Deserialize)]
+pub struct ExpensePath {
+    pub expense_id: Uuid,
+}
+
+#[derive(Deserialize, Serialize)]
+pub struct ExpenseCached {
+    pub cached: bool,
+    pub expense: ExpenseResponse,
 }

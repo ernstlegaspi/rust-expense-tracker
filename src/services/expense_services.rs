@@ -3,7 +3,10 @@ use uuid::Uuid;
 
 use crate::{
     errors::expense_errors::ExpenseError,
-    models::expense_model::{AddExpenseRequest, ExpenseResponse, ExpensesWithTotal, QueryParams},
+    models::expense_model::{
+        AddExpenseRequest, ExpenseCached, ExpensePath, ExpenseResponse, ExpensesTotal,
+        ExpensesTotalCached, PageParams,
+    },
     services::redis_services::RedisService,
 };
 
@@ -23,7 +26,7 @@ impl ExpenseServices {
         &self,
         expense: AddExpenseRequest,
         redis: &RedisService,
-        user_id: uuid::Uuid,
+        user_id: Uuid,
     ) -> Result<ExpenseResponse, ExpenseError> {
         expense.validate()?;
 
@@ -48,12 +51,14 @@ impl ExpenseServices {
 
         let expense = expense.map_err(|e| {
             if let sqlx::Error::Database(db_err) = &e {
-                if db_err.code().as_deref() == Some("23502") {
-                    return ExpenseError::RequiredFieldMissing;
+                match db_err.code().as_deref() {
+                    Some("23502") => return ExpenseError::RequiredFieldMissing,
+                    Some("23503") => return ExpenseError::ForeignKeyNotFound,
+                    _ => return ExpenseError::internal(e),
                 }
             }
 
-            ExpenseError::Internal(anyhow::Error::from(e))
+            ExpenseError::internal(e)
         })?;
 
         redis
@@ -68,16 +73,16 @@ impl ExpenseServices {
 
     pub async fn get_user_expenses(
         &self,
-        params: QueryParams,
+        params: PageParams,
         redis: &RedisService,
         user_id: Uuid,
-    ) -> Result<ExpensesWithTotal, ExpenseError> {
+    ) -> Result<ExpensesTotalCached, ExpenseError> {
         let limit: i64 = 10;
         let page = params.page.max(1);
         let offset = (page - 1) * limit;
 
         let v: i64 = redis
-            .get(format!("user:{}:expenses:version", user_id))
+            .get(&format!("user:{}:expenses:version", user_id))
             .await
             .ok()
             .flatten()
@@ -86,10 +91,13 @@ impl ExpenseServices {
 
         let key = format!("user:{}:p:{}:v:{}:expenses", user_id, page, v);
 
-        if let Some(cached) = redis.get(key.clone()).await.ok().flatten() {
+        if let Some(cached) = redis.get(&key).await.ok().flatten() {
             let cached_json = serde_json::from_str(&cached).map_err(ExpenseError::internal)?;
 
-            return Ok(cached_json);
+            return Ok(ExpensesTotalCached {
+                expenses_total: cached_json,
+                cached: true,
+            });
         }
 
         let expenses = query_as::<_, ExpenseResponse>(
@@ -118,7 +126,7 @@ impl ExpenseServices {
         .await
         .map_err(ExpenseError::internal)?;
 
-        let result = ExpensesWithTotal { expenses, total };
+        let result = ExpensesTotal { expenses, total };
 
         let json = serde_json::to_string(&result).map_err(ExpenseError::internal)?;
 
@@ -127,6 +135,58 @@ impl ExpenseServices {
             .await
             .map_err(ExpenseError::internal)?;
 
-        Ok(result)
+        Ok(ExpensesTotalCached {
+            expenses_total: result,
+            cached: false,
+        })
+    }
+
+    pub async fn get_single_expense_per_user(
+        &self,
+        path: ExpensePath,
+        redis: &RedisService,
+        user_id: Uuid,
+    ) -> Result<ExpenseCached, ExpenseError> {
+        let key = format!("user:{}:expense:{}", user_id, path.expense_id);
+
+        if let Some(cached) = redis.get(&key).await.ok().flatten() {
+            let expense = serde_json::from_str(&cached).map_err(ExpenseError::internal)?;
+
+            return Ok(ExpenseCached {
+                cached: true,
+                expense,
+            });
+        }
+
+        let expense = query_as::<_, ExpenseResponse>(
+            r#"
+                SELECT * FROM expense
+                WHERE id = $1 AND user_id = $2
+            "#,
+        )
+        .bind(path.expense_id)
+        .bind(user_id)
+        .fetch_one(&self.pool)
+        .await;
+
+        let expense = expense.map_err(|e| {
+            if let sqlx::Error::RowNotFound = &e {
+                return ExpenseError::ExpenseNotFound;
+            }
+
+            ExpenseError::internal(e)
+        })?;
+
+        let json = serde_json::to_string(&expense).map_err(ExpenseError::internal)?;
+
+        redis
+            .set(key, json, 300)
+            .await
+            .map_err(ExpenseError::internal)?;
+
+        Ok(ExpenseCached {
+            cached: false,
+            expense,
+        })
     }
 }
