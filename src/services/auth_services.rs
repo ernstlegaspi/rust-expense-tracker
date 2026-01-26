@@ -5,8 +5,9 @@ use std::result::Result;
 
 use crate::{
     errors::auth_errors::{AuthError, ValidationError},
-    models::auth_models::{AuthResponse, Login, LoginResponse, RefreshResponse, Register},
+    models::auth_models::{AuthResponse, LoginQuery, LoginRequest, RegisterRequest, UserQuery},
     services::{jwt_services::JwtService, redis_services::RedisService},
+    utils::utils::create_uuid,
 };
 
 #[derive(Clone)]
@@ -19,17 +20,22 @@ impl AuthService {
         Self { pool }
     }
 
-    pub async fn register(&self, body: Register) -> Result<AuthResponse, AuthError> {
+    pub async fn register(
+        &self,
+        body: RegisterRequest,
+        jwt: &JwtService,
+        redis: &RedisService,
+    ) -> Result<AuthResponse, AuthError> {
         body.validate()?;
 
         let hashed_password =
             hash(body.password, DEFAULT_COST).context("failed to hash password")?;
 
-        let new_user = sqlx::query_as::<_, AuthResponse>(
+        let new_user = sqlx::query_as::<_, UserQuery>(
             r#"
                 INSERT INTO users (email, name, password)
                 VALUES ($1, $2, $3)
-                RETURNING email, id, name
+                RETURNING email, id
             "#,
         )
         .bind(body.email)
@@ -45,18 +51,44 @@ impl AuthService {
                 }
             }
 
-            AuthError::Internal(anyhow::Error::from(e))
+            AuthError::internal(e)
         })?;
 
-        Ok(new_user)
+        let refresh_token_jti = create_uuid();
+        let sub = new_user.id;
+
+        redis
+            .set(
+                format!("user:{}:refresh:{refresh_token_jti}", sub),
+                &refresh_token_jti,
+                60 * 60 * 24 * 7,
+            )
+            .await
+            .map_err(AuthError::internal)?;
+
+        let token = jwt.create_access_token(sub).map_err(AuthError::internal)?;
+        let refresh_token = jwt
+            .create_refresh_token(&refresh_token_jti, sub)
+            .map_err(AuthError::internal)?;
+
+        Ok(AuthResponse {
+            email: new_user.email,
+            refresh_token,
+            token,
+        })
     }
 
-    pub async fn login(&self, body: Login) -> Result<AuthResponse, AuthError> {
+    pub async fn login(
+        &self,
+        body: LoginRequest,
+        jwt: &JwtService,
+        redis: &RedisService,
+    ) -> Result<AuthResponse, AuthError> {
         body.validate()?;
 
-        let user = sqlx::query_as::<_, LoginResponse>(
+        let user = sqlx::query_as::<_, LoginQuery>(
             r#"
-                SELECT email, id, name, password FROM users
+                SELECT email, id, password FROM users
                 WHERE email = $1
             "#,
         )
@@ -66,22 +98,39 @@ impl AuthService {
 
         let user = user.map_err(|e| {
             if let sqlx::Error::RowNotFound = &e {
-                return AuthError::UserNotFound;
+                return AuthError::InvalidCredentials;
             }
 
-            AuthError::Internal(anyhow::Error::from(e))
+            AuthError::internal(e)
         })?;
 
         if !bcrypt::verify(body.password, &user.password)
             .context("failed to verify password hash")?
         {
-            return Err(ValidationError::WrongPassword)?;
+            return Err(AuthError::InvalidCredentials)?;
         }
+
+        let refresh_token_jti = create_uuid();
+        let sub = user.id;
+
+        redis
+            .set(
+                format!("user:{}:refresh:{refresh_token_jti}", sub),
+                &refresh_token_jti,
+                60 * 60 * 24 * 7,
+            )
+            .await
+            .map_err(AuthError::internal)?;
+
+        let token = jwt.create_access_token(sub).map_err(AuthError::internal)?;
+        let refresh_token = jwt
+            .create_refresh_token(&refresh_token_jti, sub)
+            .map_err(AuthError::internal)?;
 
         Ok(AuthResponse {
             email: user.email,
-            id: user.id,
-            name: user.name,
+            refresh_token,
+            token,
         })
     }
 
@@ -90,13 +139,13 @@ impl AuthService {
         cookie: &str,
         jwt: &JwtService,
         redis: &RedisService,
-    ) -> Result<RefreshResponse, AuthError> {
+    ) -> Result<AuthResponse, AuthError> {
         let claims = jwt
             .validate_refresh_token(cookie)
             .map_err(|_| return AuthError::Unauthorized)?;
 
         let exists = redis
-            .exists(format!("user:{}:refresh:{}", claims.sub, claims.jti).as_str())
+            .exists(&format!("user:{}:refresh:{}", claims.sub, claims.jti))
             .await
             .context("failed to check refresh token")?;
 
@@ -104,9 +153,9 @@ impl AuthService {
             return Err(AuthError::Unauthorized);
         }
 
-        let user = sqlx::query_as::<_, RefreshResponse>(
+        let user = sqlx::query_as::<_, UserQuery>(
             r#"
-                SELECT id FROM users
+                SELECT email, id FROM users
                 WHERE id = $1
             "#,
         )
@@ -116,17 +165,38 @@ impl AuthService {
 
         let user = user.map_err(|e| {
             if let sqlx::Error::RowNotFound = &e {
-                return AuthError::UserNotFound;
+                return AuthError::InvalidCredentials;
             }
 
-            AuthError::Internal(anyhow::Error::from(e))
+            AuthError::internal(e)
         })?;
+
+        let jti = create_uuid();
+        let sub = user.id;
+
+        let token = jwt.create_access_token(sub).map_err(AuthError::internal)?;
+        let refresh_token = jwt
+            .create_refresh_token(&jti, sub)
+            .map_err(AuthError::internal)?;
+
+        redis
+            .set(
+                format!("user:{}:refresh:{jti}", sub),
+                &jti,
+                60 * 60 * 24 * 7,
+            )
+            .await
+            .map_err(AuthError::internal)?;
 
         redis
             .revoke(format!("user:{}:refresh:{}", claims.sub, claims.jti))
             .await
             .context("internal server error")?;
 
-        Ok(user)
+        Ok(AuthResponse {
+            email: user.email,
+            refresh_token,
+            token,
+        })
     }
 }

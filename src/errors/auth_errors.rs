@@ -8,6 +8,9 @@ pub enum ValidationError {
     #[error("name required")]
     NameRequired,
 
+    #[error("name too long")]
+    NameTooLong,
+
     #[error("name too short")]
     NameTooShort,
 
@@ -19,9 +22,6 @@ pub enum ValidationError {
 
     #[error("weak password")]
     WeakPassword,
-
-    #[error("wrong password")]
-    WrongPassword,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -32,14 +32,14 @@ pub enum AuthError {
     #[error("internal server error")]
     Internal(#[from] anyhow::Error),
 
+    #[error("invalid credentials")]
+    InvalidCredentials,
+
     #[error("duplicate email")]
     DuplicateEmail,
 
     #[error("unauthorized")]
     Unauthorized,
-
-    #[error("user not found")]
-    UserNotFound,
 }
 
 #[derive(serde::Serialize)]
@@ -51,7 +51,7 @@ impl actix_web::ResponseError for AuthError {
     fn status_code(&self) -> StatusCode {
         match self {
             AuthError::DuplicateEmail => StatusCode::CONFLICT,
-            AuthError::UserNotFound => StatusCode::NOT_FOUND,
+            AuthError::Unauthorized => StatusCode::UNAUTHORIZED,
             AuthError::Internal(_) => StatusCode::INTERNAL_SERVER_ERROR,
             _ => StatusCode::BAD_REQUEST,
         }
@@ -61,5 +61,11 @@ impl actix_web::ResponseError for AuthError {
         HttpResponse::build(self.status_code()).json(ErrorResponse {
             message: self.to_string(),
         })
+    }
+}
+
+impl AuthError {
+    pub fn internal(e: impl Into<anyhow::Error>) -> Self {
+        AuthError::Internal(e.into())
     }
 }

@@ -7,28 +7,38 @@ use zxcvbn::{Score, zxcvbn};
 
 use crate::errors::auth_errors::ValidationError;
 
-#[derive(FromRow, Serialize)]
-pub struct AuthResponse {
+#[derive(FromRow)]
+pub struct UserQuery {
     pub email: String,
     pub id: Uuid,
-    pub name: String,
+}
+
+#[derive(Serialize)]
+pub struct AuthResponse {
+    pub email: String,
+    pub refresh_token: String,
+    pub token: String,
 }
 
 #[derive(Deserialize, Serialize)]
-pub struct Register {
+pub struct RegisterRequest {
     pub email: String,
     pub name: String,
     pub password: String,
 }
 
-impl Register {
+impl RegisterRequest {
     pub fn validate(&self) -> Result<(), ValidationError> {
         if self.name.is_empty() {
             return Err(ValidationError::NameRequired);
         }
 
-        if self.name.len() < 3 || self.name.len() > 100 {
+        if self.name.len() < 3 {
             return Err(ValidationError::NameTooShort);
+        }
+
+        if self.name.len() > 100 {
+            return Err(ValidationError::NameTooLong);
         }
 
         if !self.email.validate_email() || self.email.len() > 254 {
@@ -50,21 +60,20 @@ impl Register {
     }
 }
 
-#[derive(FromRow, Serialize)]
-pub struct LoginResponse {
+#[derive(FromRow)]
+pub struct LoginQuery {
     pub email: String,
     pub id: Uuid,
-    pub name: String,
     pub password: String,
 }
 
 #[derive(Deserialize, Serialize)]
-pub struct Login {
+pub struct LoginRequest {
     pub email: String,
     pub password: String,
 }
 
-impl Login {
+impl LoginRequest {
     pub fn validate(&self) -> Result<(), ValidationError> {
         if !self.email.validate_email() {
             return Err(ValidationError::InvalidEmail);
@@ -74,15 +83,6 @@ impl Login {
             return Err(ValidationError::PasswordRequired);
         }
 
-        if self.password.len() < 8 {
-            return Err(ValidationError::WeakPassword);
-        }
-
         Ok(())
     }
-}
-
-#[derive(FromRow, Deserialize)]
-pub struct RefreshResponse {
-    pub id: Uuid,
 }

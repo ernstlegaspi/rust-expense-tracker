@@ -62,7 +62,7 @@ impl ExpenseServices {
         })?;
 
         redis
-            .incr(format!("user:{}:expenses:version", user_id))
+            .incr(&format!("user:{}:expenses:version", user_id))
             .await
             .map_err(ExpenseError::internal)?;
 
