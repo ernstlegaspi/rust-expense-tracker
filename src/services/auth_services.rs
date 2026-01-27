@@ -4,7 +4,7 @@ use sqlx::PgPool;
 use std::result::Result;
 
 use crate::{
-    errors::auth_errors::{AuthError, ValidationError},
+    errors::auth_errors::AuthError,
     models::auth_models::{AuthResponse, LoginQuery, LoginRequest, RegisterRequest, UserQuery},
     services::{jwt_services::JwtService, redis_services::RedisService},
     utils::utils::create_uuid,
@@ -189,7 +189,7 @@ impl AuthService {
             .map_err(AuthError::internal)?;
 
         redis
-            .revoke(format!("user:{}:refresh:{}", claims.sub, claims.jti))
+            .revoke(&format!("user:{}:refresh:{}", claims.sub, claims.jti))
             .await
             .context("internal server error")?;
 

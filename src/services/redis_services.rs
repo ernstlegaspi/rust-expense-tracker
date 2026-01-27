@@ -1,4 +1,4 @@
-use redis::{AsyncCommands, Client, RedisError, ToSingleRedisArg};
+use redis::{AsyncCommands, Client, FromRedisValue, RedisError, ToSingleRedisArg, pipe};
 use std::result::Result;
 
 #[derive(Clone)]
@@ -13,9 +13,34 @@ impl RedisService {
         Ok(Self { client })
     }
 
+    pub async fn exists(&self, k: &str) -> Result<bool, RedisError> {
+        let mut con = self.client.get_multiplexed_async_connection().await?;
+        con.exists(k).await
+    }
+
+    pub async fn get(&self, k: &str) -> Result<Option<String>, RedisError> {
+        let mut con = self.client.get_multiplexed_async_connection().await?;
+        con.get(k).await
+    }
+
     pub async fn incr(&self, k: &str) -> Result<(), RedisError> {
         let mut con = self.client.get_multiplexed_async_connection().await?;
         con.incr(k, 1).await
+    }
+
+    pub async fn pipeline<T: FromRedisValue>(
+        &self,
+        f: impl FnOnce(&mut redis::Pipeline),
+    ) -> Result<T, RedisError> {
+        let mut con = self.client.get_multiplexed_async_connection().await?;
+        let mut pipe = pipe();
+        f(&mut pipe);
+        pipe.query_async(&mut con).await
+    }
+
+    pub async fn revoke(&self, k: &str) -> Result<(), redis::RedisError> {
+        let mut con = self.client.get_multiplexed_async_connection().await?;
+        con.del(k).await
     }
 
     pub async fn set<T>(&self, k: String, v: T, exp: u64) -> Result<(), RedisError>
@@ -26,18 +51,11 @@ impl RedisService {
         con.set_ex(k, v, exp).await
     }
 
-    pub async fn get(&self, k: &str) -> Result<Option<String>, RedisError> {
+    pub async fn set_nx<T>(&self, k: &str, v: T) -> Result<(), RedisError>
+    where
+        T: ToSingleRedisArg + Send + Sync,
+    {
         let mut con = self.client.get_multiplexed_async_connection().await?;
-        con.get(k).await
-    }
-
-    pub async fn exists(&self, k: &str) -> Result<bool, RedisError> {
-        let mut con = self.client.get_multiplexed_async_connection().await?;
-        con.exists(k).await
-    }
-
-    pub async fn revoke(&self, k: String) -> Result<(), redis::RedisError> {
-        let mut conn = self.client.get_multiplexed_async_connection().await?;
-        conn.del(k).await
+        con.set_nx(k, v).await
     }
 }
