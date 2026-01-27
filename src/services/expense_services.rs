@@ -245,4 +245,39 @@ impl ExpenseServices {
 
         Ok(expense)
     }
+
+    pub async fn delete_expense_per_use(
+        &self,
+        path: ExpensePath,
+        redis: &RedisService,
+        user_id: Uuid,
+    ) -> Result<String, ExpenseError> {
+        let mut tx = self.pool.begin().await.map_err(ExpenseError::internal)?;
+
+        let id = query_scalar::<_, Uuid>(
+            r#"
+                DELETE FROM expense
+                WHERE id = $1 AND user_id = $2
+                RETURNING id
+            "#,
+        )
+        .bind(path.expense_id)
+        .bind(user_id)
+        .fetch_optional(&mut *tx)
+        .await
+        .map_err(ExpenseError::internal)?
+        .ok_or(ExpenseError::ExpenseNotFound)?;
+
+        redis
+            .pipeline::<()>(|pipe| {
+                pipe.del(single_expense_key(path.expense_id, user_id))
+                    .incr(all_expenses_version_key(user_id), 1);
+            })
+            .await
+            .map_err(ExpenseError::internal)?;
+
+        tx.commit().await.map_err(ExpenseError::internal)?;
+
+        Ok(id.to_string())
+    }
 }

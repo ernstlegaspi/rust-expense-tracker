@@ -73,3 +73,20 @@ pub async fn edit_expense_per_user(
         Err(e) => e.error_response(),
     }
 }
+
+pub async fn delete_expense_per_user(
+    auth: AuthMiddleware,
+    path: Path<ExpensePath>,
+    redis: Data<RedisService>,
+    services: Data<ExpenseServices>,
+) -> impl Responder {
+    match services
+        .delete_expense_per_use(path.into_inner(), &redis, auth.user_id)
+        .await
+    {
+        Ok(v) => HttpResponse::Ok().json(serde_json::json!({
+            "message": &format!("Expense deleted: {v}")
+        })),
+        Err(e) => e.error_response(),
+    }
+}
