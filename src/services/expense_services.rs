@@ -6,11 +6,14 @@ use uuid::Uuid;
 use crate::{
     errors::expense_errors::ExpenseError,
     models::expense_model::{
-        ExpenseCached, ExpensePath, ExpenseRequest, ExpenseResponse, ExpensesTotal,
+        CategoryIdPath, ExpenseCached, ExpensePath, ExpenseRequest, ExpenseResponse, ExpensesTotal,
         ExpensesTotalCached, PageParams,
     },
     services::redis_services::RedisService,
-    utils::utils::{all_expenses_version_key, single_expense_key, total_expense_key},
+    utils::utils::{
+        all_expenses_version_key, category_filter_expenses_version_key,
+        category_filter_total_expense_key, single_expense_key, total_expense_key,
+    },
 };
 
 use sqlx::{query_as, query_scalar};
@@ -23,6 +26,31 @@ pub struct ExpenseServices {
 impl ExpenseServices {
     pub fn new(pool: PgPool) -> Self {
         Self { pool }
+    }
+
+    async fn invalidate_expense_cache(
+        &self,
+        redis: &RedisService,
+        category_id: Uuid,
+        user_id: Uuid,
+        expense_id: Option<Uuid>,
+    ) -> Result<(), ExpenseError> {
+        redis
+            .pipeline(|pipe| {
+                if let Some(id) = expense_id {
+                    pipe.del(single_expense_key(id, user_id));
+                }
+
+                pipe.incr(all_expenses_version_key(user_id), 1)
+                    .del(total_expense_key(user_id))
+                    .incr(
+                        category_filter_expenses_version_key(category_id, user_id),
+                        1,
+                    )
+                    .del(category_filter_total_expense_key(category_id, user_id));
+            })
+            .await
+            .map_err(ExpenseError::internal)
     }
 
     pub async fn add_expense(
@@ -64,13 +92,8 @@ impl ExpenseServices {
             ExpenseError::internal(e)
         })?;
 
-        redis
-            .pipeline::<()>(|pipe| {
-                pipe.incr(all_expenses_version_key(user_id), 1)
-                    .del(total_expense_key(user_id));
-            })
-            .await
-            .map_err(ExpenseError::internal)?;
+        self.invalidate_expense_cache(redis, expense.category_id, user_id, None)
+            .await?;
 
         tx.commit().await.map_err(ExpenseError::internal)?;
 
@@ -251,14 +274,8 @@ impl ExpenseServices {
         .map_err(ExpenseError::internal)?
         .ok_or(ExpenseError::ExpenseNotFound)?;
 
-        redis
-            .pipeline::<()>(|pipe| {
-                pipe.del(single_expense_key(path.expense_id, user_id))
-                    .incr(all_expenses_version_key(user_id), 1)
-                    .del(total_expense_key(user_id));
-            })
-            .await
-            .map_err(ExpenseError::internal)?;
+        self.invalidate_expense_cache(redis, expense.category_id, user_id, Some(path.expense_id))
+            .await?;
 
         tx.commit().await.map_err(ExpenseError::internal)?;
 
@@ -273,11 +290,11 @@ impl ExpenseServices {
     ) -> Result<String, ExpenseError> {
         let mut tx = self.pool.begin().await.map_err(ExpenseError::internal)?;
 
-        let id: Uuid = query_scalar(
+        let (id, category_id): (Uuid, Uuid) = query_as(
             r#"
                 DELETE FROM expense
                 WHERE id = $1 AND user_id = $2
-                RETURNING id
+                RETURNING id, category_id
             "#,
         )
         .bind(path.expense_id)
@@ -287,14 +304,8 @@ impl ExpenseServices {
         .map_err(ExpenseError::internal)?
         .ok_or(ExpenseError::ExpenseNotFound)?;
 
-        redis
-            .pipeline::<()>(|pipe| {
-                pipe.del(single_expense_key(path.expense_id, user_id))
-                    .incr(all_expenses_version_key(user_id), 1)
-                    .del(total_expense_key(user_id));
-            })
-            .await
-            .map_err(ExpenseError::internal)?;
+        self.invalidate_expense_cache(redis, category_id, user_id, Some(path.expense_id))
+            .await?;
 
         tx.commit().await.map_err(ExpenseError::internal)?;
 
@@ -331,5 +342,106 @@ impl ExpenseServices {
             .map_err(ExpenseError::internal)?;
 
         Ok(total)
+    }
+
+    pub async fn filter_expense_by_category_per_user(
+        &self,
+        params: PageParams,
+        path: CategoryIdPath,
+        redis: &RedisService,
+        user_id: Uuid,
+    ) -> Result<ExpensesTotalCached, ExpenseError> {
+        let page = params.page.max(1);
+        let limit = 10;
+        let offset = (page - 1) * limit;
+        let category_id = path.category_id;
+
+        let key = category_filter_expenses_version_key(category_id, user_id);
+
+        let (_, v): (i64, String) = redis
+            .pipeline(|pipe| {
+                pipe.set_nx(&key, "1").get(&key);
+            })
+            .await
+            .map_err(ExpenseError::internal)?;
+
+        let key = format!(
+            "user:{}:filter:category:{}:v:{}:p:{}",
+            user_id, category_id, v, page
+        );
+
+        let total_key = category_filter_total_expense_key(category_id, user_id);
+
+        let total: Decimal = if let Some(cached) = redis.get(&total_key).await.ok().flatten() {
+            let total = Decimal::from_str(&cached).map_err(ExpenseError::internal)?;
+
+            total
+        } else {
+            let total = query_scalar::<_, Decimal>(
+                r#"
+                    SELECT COALESCE(SUM(amount), 0) FROM expense
+                    WHERE user_id = $1 AND category_id = $2
+                "#,
+            )
+            .bind(user_id)
+            .bind(path.category_id)
+            .fetch_one(&self.pool)
+            .await
+            .map_err(ExpenseError::internal)?;
+
+            redis
+                .set(total_key, total.to_string(), 300)
+                .await
+                .map_err(ExpenseError::internal)?;
+
+            total
+        };
+
+        if let Some(cached) = redis.get(&key).await.ok().flatten() {
+            let json: Vec<ExpenseResponse> =
+                serde_json::from_str(&cached).map_err(ExpenseError::internal)?;
+
+            let expenses_total = ExpensesTotal {
+                expenses: json,
+                total,
+            };
+
+            return Ok(ExpensesTotalCached {
+                expenses_total,
+                cached: true,
+            });
+        }
+
+        let expenses = query_as::<_, ExpenseResponse>(
+            r#"
+                SELECT id, amount, description, user_id,
+                    category_id, date, payment_method,
+                    is_recurring, tags FROM expense
+                WHERE user_id = $1 AND category_id = $2
+                ORDER BY updated_at DESC
+                LIMIT $3 OFFSET $4
+            "#,
+        )
+        .bind(user_id)
+        .bind(path.category_id)
+        .bind(limit)
+        .bind(offset)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(ExpenseError::internal)?;
+
+        let json = serde_json::to_string(&expenses).map_err(ExpenseError::internal)?;
+
+        redis
+            .set(key, json, 300)
+            .await
+            .map_err(ExpenseError::internal)?;
+
+        let expenses_total = ExpensesTotal { expenses, total };
+
+        Ok(ExpensesTotalCached {
+            expenses_total,
+            cached: false,
+        })
     }
 }

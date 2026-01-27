@@ -1,6 +1,6 @@
 use crate::{
     middleware::auth::AuthMiddleware,
-    models::expense_model::{ExpensePath, ExpenseRequest, PageParams},
+    models::expense_model::{CategoryIdPath, ExpensePath, ExpenseRequest, PageParams},
     services::{expense_services::ExpenseServices, redis_services::RedisService},
 };
 
@@ -103,6 +103,27 @@ pub async fn get_total_of_all_expenses(
         Ok(v) => HttpResponse::Ok().json(serde_json::json!({
             "total": v
         })),
+        Err(e) => e.error_response(),
+    }
+}
+
+pub async fn filter_expense_by_category_per_user(
+    auth: AuthMiddleware,
+    params: Query<PageParams>,
+    path: Path<CategoryIdPath>,
+    redis: Data<RedisService>,
+    service: Data<ExpenseServices>,
+) -> impl Responder {
+    match service
+        .filter_expense_by_category_per_user(
+            params.into_inner(),
+            path.into_inner(),
+            &redis,
+            auth.user_id,
+        )
+        .await
+    {
+        Ok(v) => HttpResponse::Ok().json(v),
         Err(e) => e.error_response(),
     }
 }

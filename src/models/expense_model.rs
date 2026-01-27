@@ -80,6 +80,11 @@ pub struct ExpensePath {
     pub expense_id: Uuid,
 }
 
+#[derive(Deserialize)]
+pub struct CategoryIdPath {
+    pub category_id: Uuid,
+}
+
 #[derive(Deserialize, Serialize)]
 pub struct ExpenseCached {
     pub cached: bool,
