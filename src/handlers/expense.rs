@@ -90,3 +90,19 @@ pub async fn delete_expense_per_user(
         Err(e) => e.error_response(),
     }
 }
+
+pub async fn get_total_of_all_expenses(
+    auth: AuthMiddleware,
+    redis: Data<RedisService>,
+    services: Data<ExpenseServices>,
+) -> impl Responder {
+    match services
+        .get_total_of_all_expenses(&redis, auth.user_id)
+        .await
+    {
+        Ok(v) => HttpResponse::Ok().json(serde_json::json!({
+            "total": v
+        })),
+        Err(e) => e.error_response(),
+    }
+}
