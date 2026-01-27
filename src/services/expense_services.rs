@@ -1,3 +1,4 @@
+use rust_decimal::Decimal;
 use sqlx::PgPool;
 use uuid::Uuid;
 
@@ -8,7 +9,7 @@ use crate::{
         ExpensesTotal, ExpensesTotalCached, PageParams,
     },
     services::redis_services::RedisService,
-    utils::utils::{all_expenses_version_key, single_expense_key},
+    utils::utils::{all_expenses_version_key, single_expense_key, total_expense_key},
 };
 
 use sqlx::{query_as, query_scalar};
@@ -63,7 +64,10 @@ impl ExpenseServices {
         })?;
 
         redis
-            .incr(&format!("user:{}:expenses:version", user_id))
+            .pipeline::<()>(|pipe| {
+                pipe.incr(all_expenses_version_key(user_id), 1)
+                    .del(total_expense_key(user_id));
+            })
             .await
             .map_err(ExpenseError::internal)?;
 
@@ -120,7 +124,7 @@ impl ExpenseServices {
         .await
         .map_err(ExpenseError::internal)?;
 
-        let total: rust_decimal::Decimal = query_scalar(
+        let total: Decimal = query_scalar(
             r#"
                 SELECT COALESCE(SUM(amount), 0) FROM expense
                 WHERE user_id = $1
@@ -236,7 +240,8 @@ impl ExpenseServices {
         redis
             .pipeline::<()>(|pipe| {
                 pipe.del(single_expense_key(path.expense_id, user_id))
-                    .incr(all_expenses_version_key(user_id), 1);
+                    .incr(all_expenses_version_key(user_id), 1)
+                    .del(total_expense_key(user_id));
             })
             .await
             .map_err(ExpenseError::internal)?;
@@ -254,7 +259,7 @@ impl ExpenseServices {
     ) -> Result<String, ExpenseError> {
         let mut tx = self.pool.begin().await.map_err(ExpenseError::internal)?;
 
-        let id = query_scalar::<_, Uuid>(
+        let id: Uuid = query_scalar(
             r#"
                 DELETE FROM expense
                 WHERE id = $1 AND user_id = $2
@@ -271,7 +276,8 @@ impl ExpenseServices {
         redis
             .pipeline::<()>(|pipe| {
                 pipe.del(single_expense_key(path.expense_id, user_id))
-                    .incr(all_expenses_version_key(user_id), 1);
+                    .incr(all_expenses_version_key(user_id), 1)
+                    .del(total_expense_key(user_id));
             })
             .await
             .map_err(ExpenseError::internal)?;
@@ -279,5 +285,37 @@ impl ExpenseServices {
         tx.commit().await.map_err(ExpenseError::internal)?;
 
         Ok(id.to_string())
+    }
+
+    pub async fn get_total_of_all_expenses(
+        &self,
+        redis: &RedisService,
+        user_id: Uuid,
+    ) -> Result<String, ExpenseError> {
+        let key = total_expense_key(user_id);
+
+        if let Some(cached) = redis.get(&key).await.ok().flatten() {
+            return Ok(cached);
+        }
+
+        let total: Decimal = query_scalar(
+            r#"
+                SELECT COALESCE(SUM(amount), 0) FROM expense
+                WHERE user_id = $1
+            "#,
+        )
+        .bind(user_id)
+        .fetch_one(&self.pool)
+        .await
+        .map_err(ExpenseError::internal)?;
+
+        let total = total.to_string();
+
+        redis
+            .set(key, &total, 300)
+            .await
+            .map_err(ExpenseError::internal)?;
+
+        Ok(total)
     }
 }
