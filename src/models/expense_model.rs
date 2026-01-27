@@ -7,16 +7,17 @@ use uuid::Uuid;
 use crate::errors::expense_errors::ExpenseError;
 
 #[derive(Deserialize)]
-pub struct AddExpenseRequest {
+pub struct ExpenseRequest {
     pub amount: Decimal,
     pub description: String,
     pub category_id: Uuid,
     pub date: NaiveDate,
+    pub payment_method: Option<String>,
     pub is_recurring: bool,
     pub tags: Option<Vec<String>>,
 }
 
-impl AddExpenseRequest {
+impl ExpenseRequest {
     pub fn validate(&self) -> Result<(), ExpenseError> {
         if self.amount <= Decimal::ZERO {
             return Err(ExpenseError::InvalidAmountValue);
@@ -45,18 +46,6 @@ pub struct ExpenseResponse {
     pub amount: Decimal,
     pub description: String,
     pub user_id: Uuid,
-    pub category_id: Uuid,
-    pub date: NaiveDate,
-    pub payment_method: Option<String>,
-    pub is_recurring: bool,
-    pub tags: Option<Vec<String>>,
-}
-
-// properties are not reusable, sqlx only accepts flat structs
-#[derive(Deserialize, Serialize)]
-pub struct EditExpenseRequest {
-    pub amount: Decimal,
-    pub description: String,
     pub category_id: Uuid,
     pub date: NaiveDate,
     pub payment_method: Option<String>,

@@ -1,12 +1,13 @@
 use rust_decimal::Decimal;
 use sqlx::PgPool;
+use std::str::FromStr;
 use uuid::Uuid;
 
 use crate::{
     errors::expense_errors::ExpenseError,
     models::expense_model::{
-        AddExpenseRequest, EditExpenseRequest, ExpenseCached, ExpensePath, ExpenseResponse,
-        ExpensesTotal, ExpensesTotalCached, PageParams,
+        ExpenseCached, ExpensePath, ExpenseRequest, ExpenseResponse, ExpensesTotal,
+        ExpensesTotalCached, PageParams,
     },
     services::redis_services::RedisService,
     utils::utils::{all_expenses_version_key, single_expense_key, total_expense_key},
@@ -26,7 +27,7 @@ impl ExpenseServices {
 
     pub async fn add_expense(
         &self,
-        expense: AddExpenseRequest,
+        expense: ExpenseRequest,
         redis: &RedisService,
         user_id: Uuid,
     ) -> Result<ExpenseResponse, ExpenseError> {
@@ -108,7 +109,6 @@ impl ExpenseServices {
 
         let expenses = query_as::<_, ExpenseResponse>(
             r#"
-
                 SELECT id, amount, description, user_id,
                     category_id, date, payment_method,
                     is_recurring, tags FROM expense
@@ -124,16 +124,28 @@ impl ExpenseServices {
         .await
         .map_err(ExpenseError::internal)?;
 
-        let total: Decimal = query_scalar(
-            r#"
-                SELECT COALESCE(SUM(amount), 0) FROM expense
-                WHERE user_id = $1
-            "#,
-        )
-        .bind(user_id)
-        .fetch_one(&self.pool)
-        .await
-        .map_err(ExpenseError::internal)?;
+        let total: Decimal =
+            if let Some(v) = redis.get(&total_expense_key(user_id)).await.ok().flatten() {
+                Decimal::from_str(&v).map_err(ExpenseError::internal)?
+            } else {
+                let total: Decimal = query_scalar(
+                    r#"
+                    SELECT COALESCE(SUM(amount), 0) FROM expense
+                    WHERE user_id = $1
+                "#,
+                )
+                .bind(user_id)
+                .fetch_one(&self.pool)
+                .await
+                .map_err(ExpenseError::internal)?;
+
+                redis
+                    .set(total_expense_key(user_id), total.to_string(), 300)
+                    .await
+                    .map_err(ExpenseError::internal)?;
+
+                total
+            };
 
         let result = ExpensesTotal { expenses, total };
 
@@ -156,7 +168,7 @@ impl ExpenseServices {
         redis: &RedisService,
         user_id: Uuid,
     ) -> Result<ExpenseCached, ExpenseError> {
-        let key = single_expense_key(user_id, path.expense_id);
+        let key = single_expense_key(path.expense_id, user_id);
 
         if let Some(cached) = redis.get(&key).await.ok().flatten() {
             let expense = serde_json::from_str(&cached).map_err(ExpenseError::internal)?;
@@ -203,11 +215,13 @@ impl ExpenseServices {
 
     pub async fn edit_expense_per_user(
         &self,
-        body: EditExpenseRequest,
+        body: ExpenseRequest,
         path: ExpensePath,
         redis: &RedisService,
         user_id: Uuid,
     ) -> Result<ExpenseResponse, ExpenseError> {
+        body.validate()?;
+
         let mut tx = self.pool.begin().await.map_err(ExpenseError::internal)?;
 
         let expense = query_as::<_, ExpenseResponse>(
@@ -251,7 +265,7 @@ impl ExpenseServices {
         Ok(expense)
     }
 
-    pub async fn delete_expense_per_use(
+    pub async fn delete_expense_per_user(
         &self,
         path: ExpensePath,
         redis: &RedisService,
@@ -291,11 +305,13 @@ impl ExpenseServices {
         &self,
         redis: &RedisService,
         user_id: Uuid,
-    ) -> Result<String, ExpenseError> {
+    ) -> Result<Decimal, ExpenseError> {
         let key = total_expense_key(user_id);
 
         if let Some(cached) = redis.get(&key).await.ok().flatten() {
-            return Ok(cached);
+            let amount = Decimal::from_str(&cached).map_err(ExpenseError::internal)?;
+
+            return Ok(amount);
         }
 
         let total: Decimal = query_scalar(
@@ -309,10 +325,8 @@ impl ExpenseServices {
         .await
         .map_err(ExpenseError::internal)?;
 
-        let total = total.to_string();
-
         redis
-            .set(key, &total, 300)
+            .set(key, &total.to_string(), 300)
             .await
             .map_err(ExpenseError::internal)?;
 
