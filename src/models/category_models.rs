@@ -1,10 +1,10 @@
-use chrono::{DateTime, Utc};
+use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
 use uuid::Uuid;
 
 use crate::errors::category_errors::CategoryError;
 
-#[derive(serde::Deserialize)]
+#[derive(Deserialize)]
 pub struct Category {
     pub name: String,
 }
@@ -27,12 +27,27 @@ impl Category {
     }
 }
 
-#[derive(FromRow, serde::Serialize)]
-pub struct AddCategoryResponse {
+#[derive(Deserialize, FromRow, Serialize)]
+pub struct CategoryResponse {
     id: Uuid,
+    description: Option<String>,
     name: String,
     user_id: Uuid,
-    created_at: DateTime<Utc>,
-    updated_at: DateTime<Utc>,
-    description: Option<String>,
+}
+
+// for dev mode only
+#[derive(Serialize)]
+pub struct CategoriesCached {
+    pub cached: bool,
+    pub categories: Vec<CategoryResponse>,
+}
+
+#[derive(Deserialize)]
+pub struct CategoryPagination {
+    #[serde(default = "default_page")]
+    pub page: i64,
+}
+
+fn default_page() -> i64 {
+    1
 }

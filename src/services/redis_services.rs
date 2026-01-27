@@ -23,6 +23,7 @@ impl RedisService {
         con.get(k).await
     }
 
+    // #[allow(unused)]
     pub async fn incr(&self, k: &str) -> Result<(), RedisError> {
         let mut con = self.client.get_multiplexed_async_connection().await?;
         con.incr(k, 1).await
@@ -51,6 +52,7 @@ impl RedisService {
         con.set_ex(k, v, exp).await
     }
 
+    #[allow(unused)]
     pub async fn set_nx<T>(&self, k: &str, v: T) -> Result<(), RedisError>
     where
         T: ToSingleRedisArg + Send + Sync,

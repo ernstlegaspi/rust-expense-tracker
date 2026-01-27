@@ -27,13 +27,22 @@ impl actix_web::ResponseError for CategoryError {
     fn status_code(&self) -> StatusCode {
         match self {
             CategoryError::Internal(_) => StatusCode::INTERNAL_SERVER_ERROR,
+            CategoryError::NameExisting => StatusCode::CONFLICT,
             _ => StatusCode::BAD_REQUEST,
         }
     }
 
     fn error_response(&self) -> HttpResponse {
+        tracing::error!(error = ?self.to_string());
+
         HttpResponse::build(self.status_code()).json(ErrorResponse {
             message: self.to_string(),
         })
+    }
+}
+
+impl CategoryError {
+    pub fn internal(e: impl Into<anyhow::Error>) -> Self {
+        CategoryError::Internal(e.into())
     }
 }
