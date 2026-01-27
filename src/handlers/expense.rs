@@ -1,6 +1,6 @@
 use crate::{
     middleware::auth::AuthMiddleware,
-    models::expense_model::{AddExpenseRequest, EditExpenseRequest, ExpensePath, PageParams},
+    models::expense_model::{ExpensePath, ExpenseRequest, PageParams},
     services::{expense_services::ExpenseServices, redis_services::RedisService},
 };
 
@@ -11,7 +11,7 @@ use actix_web::{
 
 pub async fn add_expense(
     auth: AuthMiddleware,
-    body: Json<AddExpenseRequest>,
+    body: Json<ExpenseRequest>,
     redis: Data<RedisService>,
     service: Data<ExpenseServices>,
 ) -> impl Responder {
@@ -60,7 +60,7 @@ pub async fn get_single_expense_per_user(
 
 pub async fn edit_expense_per_user(
     auth: AuthMiddleware,
-    body: Json<EditExpenseRequest>,
+    body: Json<ExpenseRequest>,
     path: Path<ExpensePath>,
     redis: Data<RedisService>,
     service: Data<ExpenseServices>,
@@ -78,10 +78,10 @@ pub async fn delete_expense_per_user(
     auth: AuthMiddleware,
     path: Path<ExpensePath>,
     redis: Data<RedisService>,
-    services: Data<ExpenseServices>,
+    service: Data<ExpenseServices>,
 ) -> impl Responder {
-    match services
-        .delete_expense_per_use(path.into_inner(), &redis, auth.user_id)
+    match service
+        .delete_expense_per_user(path.into_inner(), &redis, auth.user_id)
         .await
     {
         Ok(v) => HttpResponse::Ok().json(serde_json::json!({
@@ -94,9 +94,9 @@ pub async fn delete_expense_per_user(
 pub async fn get_total_of_all_expenses(
     auth: AuthMiddleware,
     redis: Data<RedisService>,
-    services: Data<ExpenseServices>,
+    service: Data<ExpenseServices>,
 ) -> impl Responder {
-    match services
+    match service
         .get_total_of_all_expenses(&redis, auth.user_id)
         .await
     {
