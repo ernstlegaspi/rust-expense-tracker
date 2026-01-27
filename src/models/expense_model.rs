@@ -55,7 +55,6 @@ pub struct ExpenseResponse {
 // properties are not reusable, sqlx only accepts flat structs
 #[derive(Deserialize, Serialize)]
 pub struct EditExpenseRequest {
-    pub id: Uuid,
     pub amount: Decimal,
     pub description: String,
     pub category_id: Uuid,
