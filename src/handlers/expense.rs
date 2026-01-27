@@ -1,6 +1,6 @@
 use crate::{
     middleware::auth::AuthMiddleware,
-    models::expense_model::{AddExpenseRequest, ExpensePath, PageParams},
+    models::expense_model::{AddExpenseRequest, EditExpenseRequest, ExpensePath, PageParams},
     services::{expense_services::ExpenseServices, redis_services::RedisService},
 };
 
@@ -51,6 +51,21 @@ pub async fn get_single_expense_per_user(
 ) -> impl Responder {
     match service
         .get_single_expense_per_user(params.into_inner(), &redis, auth.user_id)
+        .await
+    {
+        Ok(expense) => HttpResponse::Ok().json(expense),
+        Err(e) => e.error_response(),
+    }
+}
+
+pub async fn edit_expense_per_user(
+    auth: AuthMiddleware,
+    body: Json<EditExpenseRequest>,
+    redis: Data<RedisService>,
+    service: Data<ExpenseServices>,
+) -> impl Responder {
+    match service
+        .edit_expense_per_user(body.into_inner(), &redis, auth.user_id)
         .await
     {
         Ok(expense) => HttpResponse::Ok().json(expense),

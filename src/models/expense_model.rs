@@ -1,4 +1,4 @@
-use chrono::{DateTime, NaiveDate, Utc};
+use chrono::NaiveDate;
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
@@ -38,6 +38,7 @@ impl AddExpenseRequest {
     }
 }
 
+// properties are not reusable, sqlx only accepts flat structs
 #[derive(Deserialize, FromRow, Serialize)]
 pub struct ExpenseResponse {
     pub id: Uuid,
@@ -46,8 +47,19 @@ pub struct ExpenseResponse {
     pub user_id: Uuid,
     pub category_id: Uuid,
     pub date: NaiveDate,
-    pub created_at: Option<DateTime<Utc>>,
-    pub updated_at: Option<DateTime<Utc>>,
+    pub payment_method: Option<String>,
+    pub is_recurring: bool,
+    pub tags: Option<Vec<String>>,
+}
+
+// properties are not reusable, sqlx only accepts flat structs
+#[derive(Deserialize, Serialize)]
+pub struct EditExpenseRequest {
+    pub id: Uuid,
+    pub amount: Decimal,
+    pub description: String,
+    pub category_id: Uuid,
+    pub date: NaiveDate,
     pub payment_method: Option<String>,
     pub is_recurring: bool,
     pub tags: Option<Vec<String>>,

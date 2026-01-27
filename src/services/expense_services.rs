@@ -4,10 +4,11 @@ use uuid::Uuid;
 use crate::{
     errors::expense_errors::ExpenseError,
     models::expense_model::{
-        AddExpenseRequest, ExpenseCached, ExpensePath, ExpenseResponse, ExpensesTotal,
-        ExpensesTotalCached, PageParams,
+        AddExpenseRequest, EditExpenseRequest, ExpenseCached, ExpensePath, ExpenseResponse,
+        ExpensesTotal, ExpensesTotalCached, PageParams,
     },
     services::redis_services::RedisService,
+    utils::utils::{all_expenses_version_key, single_expense_key},
 };
 
 use sqlx::{query_as, query_scalar};
@@ -36,7 +37,7 @@ impl ExpenseServices {
             r#"
                 INSERT INTO expense (amount, description, user_id, category_id, date, is_recurring, tags)
                 VALUES ($1, $2, $3, $4, $5, $6, $7)
-                RETURNING *;
+                RETURNING id, amount, description, user_id, category_id, date, payment_method, is_recurring, tags;
             "#,
         )
         .bind(expense.amount)
@@ -81,13 +82,14 @@ impl ExpenseServices {
         let page = params.page.max(1);
         let offset = (page - 1) * limit;
 
-        let v: i64 = redis
-            .get(&format!("user:{}:expenses:version", user_id))
+        let v_key = all_expenses_version_key(user_id);
+
+        let (_, v): (i64, String) = redis
+            .pipeline(|pipe| {
+                pipe.set_nx(&v_key, "1").get(&v_key);
+            })
             .await
-            .ok()
-            .flatten()
-            .and_then(|v| v.parse().ok())
-            .unwrap_or(0);
+            .map_err(ExpenseError::internal)?;
 
         let key = format!("user:{}:p:{}:v:{}:expenses", user_id, page, v);
 
@@ -102,7 +104,10 @@ impl ExpenseServices {
 
         let expenses = query_as::<_, ExpenseResponse>(
             r#"
-                SELECT * FROM expense
+
+                SELECT id, amount, description, user_id,
+                    category_id, date, payment_method,
+                    is_recurring, tags FROM expense
                 WHERE user_id = $1
                 ORDER BY updated_at DESC
                 LIMIT $2 OFFSET $3
@@ -147,7 +152,7 @@ impl ExpenseServices {
         redis: &RedisService,
         user_id: Uuid,
     ) -> Result<ExpenseCached, ExpenseError> {
-        let key = format!("user:{}:expense:{}", user_id, path.expense_id);
+        let key = single_expense_key(user_id, path.expense_id);
 
         if let Some(cached) = redis.get(&key).await.ok().flatten() {
             let expense = serde_json::from_str(&cached).map_err(ExpenseError::internal)?;
@@ -160,7 +165,9 @@ impl ExpenseServices {
 
         let expense = query_as::<_, ExpenseResponse>(
             r#"
-                SELECT * FROM expense
+                SELECT id, amount, description, user_id,
+                    category_id, date, payment_method,
+                    is_recurring, tags FROM expense
                 WHERE id = $1 AND user_id = $2
             "#,
         )
@@ -188,5 +195,53 @@ impl ExpenseServices {
             cached: false,
             expense,
         })
+    }
+
+    pub async fn edit_expense_per_user(
+        &self,
+        body: EditExpenseRequest,
+        redis: &RedisService,
+        user_id: Uuid,
+    ) -> Result<ExpenseResponse, ExpenseError> {
+        let mut tx = self.pool.begin().await.map_err(ExpenseError::internal)?;
+
+        let expense = query_as::<_, ExpenseResponse>(
+            r#"
+                UPDATE expense
+                SET amount = $3, description = $4,
+                    category_id = $5, date = $6,
+                    updated_at = NOW(), payment_method = $7,
+                    is_recurring = $8, tags = $9
+                WHERE id = $1 AND user_id = $2
+                RETURNING id, amount, description, user_id,
+                    category_id, date, payment_method,
+                    is_recurring, tags
+            "#,
+        )
+        .bind(body.id)
+        .bind(user_id)
+        .bind(body.amount)
+        .bind(body.description)
+        .bind(body.category_id)
+        .bind(body.date)
+        .bind(body.payment_method)
+        .bind(body.is_recurring)
+        .bind(body.tags)
+        .fetch_optional(&mut *tx)
+        .await
+        .map_err(ExpenseError::internal)?
+        .ok_or(ExpenseError::ExpenseNotFound)?;
+
+        redis
+            .pipeline::<()>(|pipe| {
+                pipe.del(single_expense_key(body.id, user_id))
+                    .incr(all_expenses_version_key(user_id), 1);
+            })
+            .await
+            .map_err(ExpenseError::internal)?;
+
+        tx.commit().await.map_err(ExpenseError::internal)?;
+
+        Ok(expense)
     }
 }
