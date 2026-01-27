@@ -200,6 +200,7 @@ impl ExpenseServices {
     pub async fn edit_expense_per_user(
         &self,
         body: EditExpenseRequest,
+        path: ExpensePath,
         redis: &RedisService,
         user_id: Uuid,
     ) -> Result<ExpenseResponse, ExpenseError> {
@@ -218,7 +219,7 @@ impl ExpenseServices {
                     is_recurring, tags
             "#,
         )
-        .bind(body.id)
+        .bind(path.expense_id)
         .bind(user_id)
         .bind(body.amount)
         .bind(body.description)
@@ -234,7 +235,7 @@ impl ExpenseServices {
 
         redis
             .pipeline::<()>(|pipe| {
-                pipe.del(single_expense_key(body.id, user_id))
+                pipe.del(single_expense_key(path.expense_id, user_id))
                     .incr(all_expenses_version_key(user_id), 1);
             })
             .await

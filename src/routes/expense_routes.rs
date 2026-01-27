@@ -10,6 +10,6 @@ pub fn route(cfg: &mut ServiceConfig) {
             .route("/", post().to(add_expense))
             .route("/user", get().to(get_user_expenses))
             .route("/user/{expense_id}", get().to(get_single_expense_per_user))
-            .route("/user", put().to(edit_expense_per_user)),
+            .route("/user/{expense_id}", put().to(edit_expense_per_user)),
     );
 }

@@ -61,11 +61,12 @@ pub async fn get_single_expense_per_user(
 pub async fn edit_expense_per_user(
     auth: AuthMiddleware,
     body: Json<EditExpenseRequest>,
+    path: Path<ExpensePath>,
     redis: Data<RedisService>,
     service: Data<ExpenseServices>,
 ) -> impl Responder {
     match service
-        .edit_expense_per_user(body.into_inner(), &redis, auth.user_id)
+        .edit_expense_per_user(body.into_inner(), path.into_inner(), &redis, auth.user_id)
         .await
     {
         Ok(expense) => HttpResponse::Ok().json(expense),
